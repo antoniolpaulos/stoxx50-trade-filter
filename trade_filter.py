@@ -12,6 +12,28 @@ import requests
 from datetime import datetime, date, timedelta
 from termcolor import colored
 from pathlib import Path
+import logging
+
+# Import custom exceptions
+from exceptions import (
+    TradeFilterError, ConfigurationError, MarketDataError,
+    CalendarAPIError, TelegramError, ValidationError, NetworkError
+)
+
+# Setup logging
+def setup_logging(log_level='INFO', log_file=None):
+    """Setup logging configuration."""
+    level = getattr(logging, log_level.upper(), logging.INFO)
+    
+    handlers = [logging.StreamHandler()]
+    if log_file:
+        handlers.append(logging.FileHandler(log_file))
+    
+    logging.basicConfig(
+        level=level,
+        format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+        handlers=handlers
+    )
 
 # Default config path
 DEFAULT_CONFIG_PATH = Path(__file__).parent / "config.yaml"
@@ -40,22 +62,66 @@ DEFAULT_CONFIG = {
 }
 
 
+def validate_config(config):
+    """Validate configuration values."""
+    # Validate rules
+    rules = config.get('rules', {})
+    if 'vix_max' not in rules:
+        raise ConfigurationError("Missing 'vix_max' in rules configuration")
+    if rules['vix_max'] <= 0:
+        raise ConfigurationError("VIX max must be positive")
+    if 'intraday_change_max' not in rules:
+        raise ConfigurationError("Missing 'intraday_change_max' in rules configuration")
+    if not (0 <= rules['intraday_change_max'] <= 100):
+        raise ConfigurationError("Intraday change max must be between 0 and 100")
+    
+    # Validate strikes
+    strikes = config.get('strikes', {})
+    if 'otm_percent' not in strikes:
+        raise ConfigurationError("Missing 'otm_percent' in strikes configuration")
+    if not (0.1 <= strikes['otm_percent'] <= 10):
+        raise ConfigurationError("OTM percent must be between 0.1 and 10")
+    if 'wing_width' not in strikes:
+        raise ConfigurationError("Missing 'wing_width' in strikes configuration")
+    if strikes['wing_width'] <= 0:
+        raise ConfigurationError("Wing width must be positive")
+    
+    # Validate Telegram if enabled
+    telegram = config.get('telegram', {})
+    if telegram.get('enabled'):
+        bot_token = telegram.get('bot_token', '')
+        chat_id = telegram.get('chat_id', '')
+        if not bot_token or bot_token == 'YOUR_BOT_TOKEN':
+            raise ConfigurationError("Telegram bot_token required when enabled")
+        if not chat_id or chat_id == 'YOUR_CHAT_ID':
+            raise ConfigurationError("Telegram chat_id required when enabled")
+
+
 def load_config(config_path=None):
     """Load configuration from YAML file."""
     path = Path(config_path) if config_path else DEFAULT_CONFIG_PATH
 
-    if path.exists():
-        with open(path, 'r') as f:
-            user_config = yaml.safe_load(f)
-            # Merge with defaults
-            config = DEFAULT_CONFIG.copy()
-            for key, value in user_config.items():
-                if isinstance(value, dict) and key in config:
-                    config[key].update(value)
-                else:
-                    config[key] = value
-            return config
-    return DEFAULT_CONFIG
+    try:
+        if path.exists():
+            with open(path, 'r') as f:
+                user_config = yaml.safe_load(f)
+                # Merge with defaults
+                config = DEFAULT_CONFIG.copy()
+                for key, value in user_config.items():
+                    if isinstance(value, dict) and key in config:
+                        config[key].update(value)
+                    else:
+                        config[key] = value
+                validate_config(config)
+                return config
+        else:
+            logging.info(f"Config file {path} not found, using defaults")
+            validate_config(DEFAULT_CONFIG)
+            return DEFAULT_CONFIG
+    except yaml.YAMLError as e:
+        raise ConfigurationError(f"Invalid YAML syntax in config file: {e}")
+    except Exception as e:
+        raise ConfigurationError(f"Error loading config file: {e}")
 
 
 def config_exists():
@@ -194,55 +260,94 @@ def check_and_prompt_setup(config):
     return config
 
 
+def validate_market_data(vix_data, spx_data):
+    """Validate fetched market data quality."""
+    if vix_data.empty:
+        raise MarketDataError("VIX data is empty - market may be closed")
+    if spx_data.empty:
+        raise MarketDataError("SPX data is empty - market may be closed")
+    
+    if 'Close' not in vix_data.columns:
+        raise MarketDataError("VIX data missing required 'Close' column")
+    if 'Close' not in spx_data.columns or 'Open' not in spx_data.columns:
+        raise MarketDataError("SPX data missing required columns")
+    
+    # Check for invalid values
+    if (vix_data['Close'] <= 0).any():
+        raise MarketDataError("VIX values must be positive")
+    if (spx_data['Close'] <= 0).any() or (spx_data['Open'] <= 0).any():
+        raise MarketDataError("SPX prices must be positive")
+
+
 def get_market_data(include_history=False):
     """Fetch current VIX and S&P 500 data."""
-    vix = yf.Ticker("^VIX")
-    spx = yf.Ticker("^GSPC")
+    try:
+        logging.info("Fetching market data...")
+        
+        # Fetch VIX and SPX data with error handling
+        vix = yf.Ticker("^VIX")
+        spx = yf.Ticker("^GSPC")
 
-    vix_data = vix.history(period="5d")
-    spx_data = spx.history(period="5d" if include_history else "1d")
+        vix_data = vix.history(period="5d")
+        spx_data = spx.history(period="5d" if include_history else "1d")
+        
+        # Validate data quality
+        validate_market_data(vix_data, spx_data)
 
-    if vix_data.empty or spx_data.empty:
-        raise ValueError("Unable to fetch market data. Market may be closed.")
+        result = {
+            'vix': vix_data['Close'].iloc[-1],
+            'spx_current': spx_data['Close'].iloc[-1],
+            'spx_open': spx_data['Open'].iloc[-1]
+        }
+        
+        logging.info(f"VIX: {result['vix']:.2f}, SPX: {result['spx_current']:.2f}")
 
-    result = {
-        'vix': vix_data['Close'].iloc[-1],
-        'spx_current': spx_data['Close'].iloc[-1],
-        'spx_open': spx_data['Open'].iloc[-1]
-    }
+        if include_history and len(spx_data) >= 2:
+            # Previous day data for additional filters
+            prev_day = spx_data.iloc[-2]
+            result['prev_high'] = prev_day['High']
+            result['prev_low'] = prev_day['Low']
+            result['prev_close'] = prev_day['Close']
+            result['prev_range_pct'] = ((prev_day['High'] - prev_day['Low']) / prev_day['Close']) * 100
 
-    if include_history and len(spx_data) >= 2:
-        # Previous day data for additional filters
-        prev_day = spx_data.iloc[-2]
-        result['prev_high'] = prev_day['High']
-        result['prev_low'] = prev_day['Low']
-        result['prev_close'] = prev_day['Close']
-        result['prev_range_pct'] = ((prev_day['High'] - prev_day['Low']) / prev_day['Close']) * 100
+            # Calculate 20-day moving average
+            try:
+                spx_extended = yf.Ticker("^GSPC").history(period="1mo")
+                if not spx_extended.empty:
+                    if len(spx_extended) >= 20:
+                        result['ma_20'] = spx_extended['Close'].tail(20).mean()
+                    else:
+                        result['ma_20'] = spx_extended['Close'].mean()
+                        logging.warning("Using available data for MA calculation (less than 20 days)")
+                else:
+                    raise MarketDataError("Extended SPX data is empty")
+            except Exception as e:
+                raise MarketDataError(f"Failed to fetch extended SPX data: {e}")
 
-        # Calculate 20-day moving average (approximate with available data)
-        if len(spx_data) >= 5:
-            result['ma_20_approx'] = spx_data['Close'].mean()  # Use available data
+        # VIX term structure (VIX vs VIX3M)
+        if include_history:
+            try:
+                vix3m = yf.Ticker("^VIX3M")
+                vix3m_data = vix3m.history(period="1d")
+                if not vix3m_data.empty:
+                    result['vix3m'] = vix3m_data['Close'].iloc[-1]
+                    result['vix_contango'] = result['vix3m'] > result['vix']
+                else:
+                    logging.warning("VIX3M data is empty")
+                    result['vix3m'] = None
+                    result['vix_contango'] = None
+            except Exception as e:
+                logging.warning(f"Could not fetch VIX3M data: {e}")
+                result['vix3m'] = None
+                result['vix_contango'] = None
 
-        # Get more history for proper MA calculation
-        spx_extended = yf.Ticker("^GSPC").history(period="1mo")
-        if len(spx_extended) >= 20:
-            result['ma_20'] = spx_extended['Close'].tail(20).mean()
+        return result
+        
+    except Exception as e:
+        if isinstance(e, MarketDataError):
+            raise
         else:
-            result['ma_20'] = spx_extended['Close'].mean()
-
-    # VIX term structure (VIX vs VIX3M)
-    if include_history:
-        try:
-            vix3m = yf.Ticker("^VIX3M")
-            vix3m_data = vix3m.history(period="1d")
-            if not vix3m_data.empty:
-                result['vix3m'] = vix3m_data['Close'].iloc[-1]
-                result['vix_contango'] = result['vix3m'] > result['vix']
-        except Exception:
-            result['vix3m'] = None
-            result['vix_contango'] = None
-
-    return result
+            raise MarketDataError(f"Failed to fetch market data: {e}")
 
 
 def calculate_intraday_change(current, open_price):
@@ -310,35 +415,45 @@ def check_economic_calendar(config=None):
 
     def fetch_forexfactory():
         """Fetch from ForexFactory API."""
-        url = "https://nfs.faireconomy.media/ff_calendar_thisweek.json"
-        response = requests.get(url, timeout=10)
-        response.raise_for_status()
-        return response.json()
+        try:
+            url = "https://nfs.faireconomy.media/ff_calendar_thisweek.json"
+            response = requests.get(url, timeout=10)
+            response.raise_for_status()
+            return response.json()
+        except requests.RequestException as e:
+            raise CalendarAPIError(f"ForexFactory API failed: {e}")
+        except Exception as e:
+            raise CalendarAPIError(f"Failed to parse ForexFactory data: {e}")
 
     def fetch_trading_economics():
         """Fetch from Trading Economics calendar page (scrape JSON from HTML)."""
-        url = f"https://tradingeconomics.com/calendar"
-        headers = {'User-Agent': 'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36'}
-        response = requests.get(url, headers=headers, timeout=10)
-        response.raise_for_status()
+        try:
+            url = f"https://tradingeconomics.com/calendar"
+            headers = {'User-Agent': 'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36'}
+            response = requests.get(url, headers=headers, timeout=10)
+            response.raise_for_status()
 
-        # Try to find embedded JSON data
-        import re
-        json_match = re.search(r'var defined = (\[.*?\]);', response.text, re.DOTALL)
-        if json_match:
-            import json
-            data = json.loads(json_match.group(1))
-            events = []
-            for item in data:
-                if item.get('Country') == 'United States':
-                    events.append({
-                        'country': 'USD',
-                        'title': item.get('Event', ''),
-                        'date': item.get('Date', ''),
-                        'impact': 'High' if item.get('Importance', 0) >= 3 else 'Medium'
-                    })
-            return events
-        return []
+            # Try to find embedded JSON data
+            import re
+            json_match = re.search(r'var defined = (\[.*?\]);', response.text, re.DOTALL)
+            if json_match:
+                import json
+                data = json.loads(json_match.group(1))
+                events = []
+                for item in data:
+                    if item.get('Country') == 'United States':
+                        events.append({
+                            'country': 'USD',
+                            'title': item.get('Event', ''),
+                            'date': item.get('Date', ''),
+                            'impact': 'High' if item.get('Importance', 0) >= 3 else 'Medium'
+                        })
+                return events
+            return []
+        except requests.RequestException as e:
+            raise CalendarAPIError(f"Trading Economics API failed: {e}")
+        except Exception as e:
+            raise CalendarAPIError(f"Failed to parse Trading Economics data: {e}")
 
     # Try primary API (ForexFactory)
     try:
@@ -353,7 +468,7 @@ def check_economic_calendar(config=None):
             'error': None
         }
 
-    except requests.exceptions.RequestException as primary_error:
+    except Exception as primary_error:
         # Try backup API if enabled
         if use_backup:
             try:
@@ -368,6 +483,7 @@ def check_economic_calendar(config=None):
                     'error': None
                 }
             except Exception as backup_error:
+                logging.error(f"Both calendar APIs failed: Primary={primary_error}, Backup={backup_error}")
                 return {
                     'has_high_impact': None,
                     'events': [],
@@ -375,7 +491,8 @@ def check_economic_calendar(config=None):
                     'source': None,
                     'error': f"Both APIs failed: {str(primary_error)}"
                 }
-
+        
+        logging.error(f"Primary calendar API failed: {primary_error}")
         return {
             'has_high_impact': None,
             'events': [],
@@ -394,6 +511,7 @@ def send_telegram_message(config, message):
     chat_id = config['telegram'].get('chat_id', '')
 
     if not bot_token or not chat_id or bot_token == 'YOUR_BOT_TOKEN':
+        logging.warning("Telegram not properly configured - skipping notification")
         return
 
     try:
@@ -403,9 +521,21 @@ def send_telegram_message(config, message):
             'text': message,
             'parse_mode': 'HTML'
         }
-        requests.post(url, json=payload, timeout=10)
+        
+        logging.info(f"Sending Telegram message to chat_id: {chat_id}")
+        response = requests.post(url, json=payload, timeout=10)
+        response.raise_for_status()
+        
+        logging.info("Telegram message sent successfully")
+        
+    except requests.exceptions.RequestException as e:
+        error_msg = f"Telegram API request failed: {e}"
+        logging.error(error_msg)
+        raise TelegramError(error_msg)
     except Exception as e:
-        print(colored(f"  [WARN] Telegram notification failed: {e}", "yellow"))
+        error_msg = f"Unexpected error sending Telegram message: {e}"
+        logging.error(error_msg)
+        raise TelegramError(error_msg)
 
 
 def evaluate_trade(config, use_additional_filters=False):
