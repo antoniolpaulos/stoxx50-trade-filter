@@ -16,12 +16,11 @@ additional_filters:
   prev_day_range_max: 2.0        # Max previous day range (%)
   check_vix_term_structure: true # Check VIX contango/backwardation
 
-# Telegram notifications (optional)
-# Get bot token from @BotFather, chat_id from @userinfobot
+# Telegram notifications
 telegram:
-  enabled: false
-  bot_token: "YOUR_BOT_TOKEN"
-  chat_id: "YOUR_CHAT_ID"
+  enabled: true
+  bot_token: "8500564281:AAHsPsx5nLqE2kRrWU3mboUAakAz8MpQaxc"
+  chat_id: "6963877716"
 
 # Logging
 logging:
