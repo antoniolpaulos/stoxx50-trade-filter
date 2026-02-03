@@ -5,7 +5,7 @@ Determines if market conditions are favorable for trading.
 """
 
 import argparse
-import os
+import sys
 import yaml
 import yfinance as yf
 import requests
@@ -15,6 +15,7 @@ from pathlib import Path
 
 # Default config path
 DEFAULT_CONFIG_PATH = Path(__file__).parent / "config.yaml"
+EXAMPLE_CONFIG_PATH = Path(__file__).parent / "config.yaml.example"
 
 # Default configuration (used if no config file)
 DEFAULT_CONFIG = {
@@ -55,6 +56,142 @@ def load_config(config_path=None):
                     config[key] = value
             return config
     return DEFAULT_CONFIG
+
+
+def config_exists():
+    """Check if config.yaml exists."""
+    return DEFAULT_CONFIG_PATH.exists()
+
+
+def telegram_needs_setup(config):
+    """Check if Telegram is enabled but not properly configured."""
+    tg = config.get('telegram', {})
+    if not tg.get('enabled'):
+        return False
+    bot_token = tg.get('bot_token', '')
+    chat_id = tg.get('chat_id', '')
+    return (not bot_token or not chat_id or
+            bot_token == 'YOUR_BOT_TOKEN' or chat_id == 'YOUR_CHAT_ID')
+
+
+def setup_config():
+    """Interactive setup wizard for config.yaml."""
+    print("\n" + "=" * 60)
+    print(colored("  TRADE FILTER SETUP", "cyan", attrs=["bold"]))
+    print("=" * 60 + "\n")
+
+    # Check if config exists
+    if not config_exists():
+        if EXAMPLE_CONFIG_PATH.exists():
+            print("No config.yaml found. Creating from template...")
+            with open(EXAMPLE_CONFIG_PATH, 'r') as f:
+                config_content = f.read()
+            with open(DEFAULT_CONFIG_PATH, 'w') as f:
+                f.write(config_content)
+            print(colored("Created config.yaml from template.\n", "green"))
+        else:
+            print("Creating default config.yaml...")
+            with open(DEFAULT_CONFIG_PATH, 'w') as f:
+                yaml.dump(DEFAULT_CONFIG, f, default_flow_style=False)
+            print(colored("Created config.yaml with defaults.\n", "green"))
+
+    # Load current config
+    config = load_config()
+
+    # Telegram setup
+    print(colored("TELEGRAM SETUP", "white", attrs=["bold", "underline"]))
+    print()
+    print("To receive notifications, you need:")
+    print("  1. A Telegram bot token (from @BotFather)")
+    print("  2. Your chat ID (send a message to your bot, then we'll fetch it)")
+    print()
+
+    setup_telegram = input("Set up Telegram notifications? [y/N]: ").strip().lower()
+
+    if setup_telegram == 'y':
+        print()
+        bot_token = input("Enter your bot token from @BotFather: ").strip()
+
+        if not bot_token:
+            print(colored("No token provided. Skipping Telegram setup.", "yellow"))
+        else:
+            print()
+            print("Now send any message to your bot in Telegram...")
+            input("Press Enter when done...")
+
+            # Fetch chat ID from bot updates
+            try:
+                url = f"https://api.telegram.org/bot{bot_token}/getUpdates"
+                response = requests.get(url, timeout=10)
+                data = response.json()
+
+                if data.get('ok') and data.get('result'):
+                    chat_id = str(data['result'][-1]['message']['chat']['id'])
+                    user_name = data['result'][-1]['message']['from'].get('first_name', 'User')
+
+                    print(colored(f"\nFound chat ID for {user_name}: {chat_id}", "green"))
+
+                    # Update config
+                    config['telegram']['enabled'] = True
+                    config['telegram']['bot_token'] = bot_token
+                    config['telegram']['chat_id'] = chat_id
+
+                    # Write updated config
+                    with open(DEFAULT_CONFIG_PATH, 'r') as f:
+                        config_content = f.read()
+
+                    # Update the telegram section
+                    import re
+                    config_content = re.sub(
+                        r'telegram:\s*\n\s*enabled:.*\n\s*bot_token:.*\n\s*chat_id:.*',
+                        f'telegram:\n  enabled: true\n  bot_token: "{bot_token}"\n  chat_id: "{chat_id}"',
+                        config_content
+                    )
+
+                    with open(DEFAULT_CONFIG_PATH, 'w') as f:
+                        f.write(config_content)
+
+                    # Send test message
+                    print("\nSending test message...")
+                    test_url = f"https://api.telegram.org/bot{bot_token}/sendMessage"
+                    payload = {
+                        'chat_id': chat_id,
+                        'text': '✅ Trade Filter notifications enabled!',
+                        'parse_mode': 'HTML'
+                    }
+                    requests.post(test_url, json=payload, timeout=10)
+                    print(colored("Test message sent! Check your Telegram.", "green"))
+
+                else:
+                    print(colored("\nNo messages found. Make sure you messaged your bot.", "red"))
+
+            except Exception as e:
+                print(colored(f"\nError fetching chat ID: {e}", "red"))
+
+    print()
+    print(colored("Setup complete!", "green", attrs=["bold"]))
+    print(f"Config saved to: {DEFAULT_CONFIG_PATH}")
+    print()
+
+
+def check_and_prompt_setup(config):
+    """Check if setup is needed and prompt user."""
+    if not config_exists():
+        print(colored("\nNo config.yaml found.", "yellow"))
+        response = input("Run setup wizard? [Y/n]: ").strip().lower()
+        if response != 'n':
+            setup_config()
+            return load_config()
+        else:
+            print("Using default configuration.\n")
+    elif telegram_needs_setup(config):
+        print(colored("\nTelegram is enabled but not configured.", "yellow"))
+        response = input("Run setup wizard? [Y/n]: ").strip().lower()
+        if response != 'n':
+            setup_config()
+            return load_config()
+
+    return config
 
 
 def get_market_data(include_history=False):
@@ -394,6 +531,7 @@ Examples:
   python trade_filter.py                    # Basic rules only
   python trade_filter.py -a                 # Include additional filters
   python trade_filter.py -c myconfig.yaml   # Use custom config file
+  python trade_filter.py --setup            # Run setup wizard
         """
     )
 
@@ -401,10 +539,22 @@ Examples:
                         help='Enable additional filters (MA deviation, prev day range, VIX structure)')
     parser.add_argument('-c', '--config', type=str, default=None,
                         help='Path to config file (default: config.yaml)')
+    parser.add_argument('--setup', action='store_true',
+                        help='Run the setup wizard for config and Telegram')
 
     args = parser.parse_args()
 
+    # Run setup wizard if requested
+    if args.setup:
+        setup_config()
+        return
+
     config = load_config(args.config)
+
+    # Check if setup is needed (only in interactive mode)
+    if sys.stdin.isatty():
+        config = check_and_prompt_setup(config)
+
     evaluate_trade(config, use_additional_filters=args.additional)
 
 
