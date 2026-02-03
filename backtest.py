@@ -1,0 +1,291 @@
+#!/usr/bin/env python3
+"""
+SPX 0DTE Iron Condor Backtest
+Tests the trade_filter strategy over a historical time period.
+"""
+
+import argparse
+import yfinance as yf
+import pandas as pd
+from datetime import datetime, timedelta
+from termcolor import colored
+
+
+def get_historical_data(start_date, end_date):
+    """Fetch historical VIX and SPX data."""
+    # Add buffer days to ensure we have data for the full range
+    buffer_start = (datetime.strptime(start_date, '%Y-%m-%d') - timedelta(days=5)).strftime('%Y-%m-%d')
+    buffer_end = (datetime.strptime(end_date, '%Y-%m-%d') + timedelta(days=5)).strftime('%Y-%m-%d')
+
+    vix = yf.Ticker("^VIX")
+    spx = yf.Ticker("^GSPC")
+
+    vix_data = vix.history(start=buffer_start, end=buffer_end)
+    spx_data = spx.history(start=buffer_start, end=buffer_end)
+
+    return vix_data, spx_data
+
+
+def calculate_strikes(spx_price, otm_percent=1.0):
+    """Calculate 1% OTM call and put strikes (rounded to 5-point increments)."""
+    call_strike = spx_price * (1 + otm_percent / 100)
+    put_strike = spx_price * (1 - otm_percent / 100)
+
+    call_strike = round(call_strike / 5) * 5
+    put_strike = round(put_strike / 5) * 5
+
+    return call_strike, put_strike
+
+
+def evaluate_day(vix_close, spx_open, spx_price_at_entry):
+    """
+    Evaluate if we would trade on this day.
+    Returns (should_trade, reason) tuple.
+    """
+    # Calculate intraday change at entry time (~10:30 ET)
+    # Using price between open and close as approximation
+    intraday_change = ((spx_price_at_entry - spx_open) / spx_open) * 100
+
+    # Rule 1: VIX check
+    if vix_close > 22:
+        return False, f"VIX too high ({vix_close:.2f})", intraday_change
+
+    # Rule 2: Intraday change check
+    if abs(intraday_change) > 1.0:
+        return False, f"Trend too strong ({intraday_change:+.2f}%)", intraday_change
+
+    # Rule 3: Economic calendar - skipped for backtest (data not available historically)
+
+    return True, "Conditions met", intraday_change
+
+
+def simulate_iron_condor(entry_price, spx_close, call_strike, put_strike, wing_width=25, credit=2.50):
+    """
+    Simulate Iron Condor P&L.
+
+    Args:
+        entry_price: SPX price at entry
+        spx_close: SPX closing price (0DTE expiration)
+        call_strike: Short call strike
+        put_strike: Short put strike
+        wing_width: Width of wings in points (default 25)
+        credit: Estimated credit received per spread (default $2.50)
+
+    Returns:
+        P&L in dollars (per 1-lot, assuming $100 multiplier)
+    """
+    multiplier = 100  # SPX options multiplier
+
+    if spx_close <= put_strike:
+        # Put side breached
+        intrinsic = put_strike - spx_close
+        loss = min(intrinsic, wing_width) - credit
+        return -loss * multiplier
+    elif spx_close >= call_strike:
+        # Call side breached
+        intrinsic = spx_close - call_strike
+        loss = min(intrinsic, wing_width) - credit
+        return -loss * multiplier
+    else:
+        # Price within range - max profit
+        return credit * multiplier
+
+
+def run_backtest(start_date, end_date, wing_width=25, credit=2.50, verbose=True):
+    """Run backtest over the specified date range."""
+
+    print("\n" + "=" * 70)
+    print(colored("  SPX 0DTE IRON CONDOR BACKTEST", "cyan", attrs=["bold"]))
+    print(colored(f"  Period: {start_date} to {end_date}", "cyan"))
+    print("=" * 70 + "\n")
+
+    # Fetch data
+    print("Fetching historical data...")
+    vix_data, spx_data = get_historical_data(start_date, end_date)
+
+    # Filter to date range
+    start_dt = datetime.strptime(start_date, '%Y-%m-%d')
+    end_dt = datetime.strptime(end_date, '%Y-%m-%d')
+
+    # Results tracking
+    results = []
+    total_pnl = 0
+    trades_taken = 0
+    trades_skipped = 0
+    wins = 0
+    losses = 0
+
+    print("Running backtest...\n")
+
+    if verbose:
+        print(colored("DATE        VIX     SPX OPEN   ENTRY    CHANGE   TRADE?   STRIKES        CLOSE     P&L", "white", attrs=["bold"]))
+        print("-" * 95)
+
+    # Iterate through trading days
+    for date in spx_data.index:
+        date_str = date.strftime('%Y-%m-%d')
+        date_only = date.replace(tzinfo=None)
+
+        if date_only < start_dt or date_only > end_dt:
+            continue
+
+        # Get day's data
+        try:
+            spx_row = spx_data.loc[date]
+            vix_row = vix_data.loc[date]
+        except KeyError:
+            continue
+
+        spx_open = spx_row['Open']
+        spx_high = spx_row['High']
+        spx_low = spx_row['Low']
+        spx_close = spx_row['Close']
+        vix_close = vix_row['Close']
+
+        # Estimate price at 10:30 ET entry (roughly 1/6 into the trading day)
+        # Using weighted average: 70% open + 30% towards midpoint
+        spx_entry = spx_open + (((spx_high + spx_low) / 2) - spx_open) * 0.3
+
+        # Evaluate rules
+        should_trade, reason, intraday_change = evaluate_day(vix_close, spx_open, spx_entry)
+
+        if should_trade:
+            trades_taken += 1
+            call_strike, put_strike = calculate_strikes(spx_entry)
+            pnl = simulate_iron_condor(spx_entry, spx_close, call_strike, put_strike, wing_width, credit)
+            total_pnl += pnl
+
+            if pnl > 0:
+                wins += 1
+                pnl_color = "green"
+            else:
+                losses += 1
+                pnl_color = "red"
+
+            results.append({
+                'date': date_str,
+                'vix': vix_close,
+                'spx_open': spx_open,
+                'spx_entry': spx_entry,
+                'spx_close': spx_close,
+                'intraday_change': intraday_change,
+                'traded': True,
+                'call_strike': call_strike,
+                'put_strike': put_strike,
+                'pnl': pnl
+            })
+
+            if verbose:
+                print(f"{date_str}  {vix_close:6.2f}  {spx_open:8.2f}  {spx_entry:8.2f}  {intraday_change:+5.2f}%   "
+                      f"{colored('YES', 'green')}      {put_strike:.0f}/{call_strike:.0f}      {spx_close:8.2f}  "
+                      f"{colored(f'${pnl:+.0f}', pnl_color)}")
+        else:
+            trades_skipped += 1
+            results.append({
+                'date': date_str,
+                'vix': vix_close,
+                'spx_open': spx_open,
+                'spx_entry': spx_entry,
+                'spx_close': spx_close,
+                'intraday_change': intraday_change,
+                'traded': False,
+                'reason': reason,
+                'pnl': 0
+            })
+
+            if verbose:
+                print(f"{date_str}  {vix_close:6.2f}  {spx_open:8.2f}  {spx_entry:8.2f}  {intraday_change:+5.2f}%   "
+                      f"{colored('NO', 'yellow')}       {reason}")
+
+    # Summary
+    print("\n" + "=" * 70)
+    print(colored("  BACKTEST SUMMARY", "cyan", attrs=["bold"]))
+    print("=" * 70 + "\n")
+
+    total_days = trades_taken + trades_skipped
+    win_rate = (wins / trades_taken * 100) if trades_taken > 0 else 0
+    avg_pnl = total_pnl / trades_taken if trades_taken > 0 else 0
+
+    print(f"  Period:              {start_date} to {end_date}")
+    print(f"  Trading Days:        {total_days}")
+    print(f"  Trades Taken:        {trades_taken} ({trades_taken/total_days*100:.1f}% of days)" if total_days > 0 else "  Trades Taken:        0")
+    print(f"  Trades Skipped:      {trades_skipped}")
+    print()
+    print(f"  Wins:                {wins}")
+    print(f"  Losses:              {losses}")
+    print(f"  Win Rate:            {colored(f'{win_rate:.1f}%', 'green' if win_rate >= 50 else 'red')}")
+    print()
+    print(f"  Total P&L:           {colored(f'${total_pnl:,.0f}', 'green' if total_pnl >= 0 else 'red')}")
+    print(f"  Avg P&L per Trade:   {colored(f'${avg_pnl:,.0f}', 'green' if avg_pnl >= 0 else 'red')}")
+    print()
+
+    # Risk metrics
+    if trades_taken > 0:
+        winning_trades = [r['pnl'] for r in results if r.get('traded') and r['pnl'] > 0]
+        losing_trades = [r['pnl'] for r in results if r.get('traded') and r['pnl'] < 0]
+
+        avg_win = sum(winning_trades) / len(winning_trades) if winning_trades else 0
+        avg_loss = sum(losing_trades) / len(losing_trades) if losing_trades else 0
+        max_win = max(winning_trades) if winning_trades else 0
+        max_loss = min(losing_trades) if losing_trades else 0
+
+        print(f"  Avg Win:             ${avg_win:,.0f}")
+        print(f"  Avg Loss:            ${avg_loss:,.0f}")
+        print(f"  Max Win:             ${max_win:,.0f}")
+        print(f"  Max Loss:            ${max_loss:,.0f}")
+
+        if avg_loss != 0:
+            profit_factor = abs(sum(winning_trades) / sum(losing_trades)) if losing_trades else float('inf')
+            print(f"  Profit Factor:       {profit_factor:.2f}")
+
+    print()
+    print(colored("  Note: Rule 3 (economic calendar) not applied - historical data unavailable.", "yellow"))
+    print(colored("  Actual results may differ on high-impact news days.", "yellow"))
+    print()
+    print("=" * 70 + "\n")
+
+    return results
+
+
+def main():
+    parser = argparse.ArgumentParser(
+        description='Backtest SPX 0DTE Iron Condor strategy',
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        epilog="""
+Examples:
+  python backtest.py --start 2024-01-01 --end 2024-12-31
+  python backtest.py --start 2024-06-01 --end 2024-06-30 --credit 3.00
+  python backtest.py --start 2024-01-01 --end 2024-03-31 --quiet
+        """
+    )
+
+    parser.add_argument('--start', '-s', required=True, help='Start date (YYYY-MM-DD)')
+    parser.add_argument('--end', '-e', required=True, help='End date (YYYY-MM-DD)')
+    parser.add_argument('--wing-width', '-w', type=float, default=25, help='Wing width in points (default: 25)')
+    parser.add_argument('--credit', '-c', type=float, default=2.50, help='Estimated credit per spread (default: 2.50)')
+    parser.add_argument('--quiet', '-q', action='store_true', help='Only show summary, not daily details')
+
+    args = parser.parse_args()
+
+    # Validate dates
+    try:
+        start_dt = datetime.strptime(args.start, '%Y-%m-%d')
+        end_dt = datetime.strptime(args.end, '%Y-%m-%d')
+        if start_dt > end_dt:
+            print(colored("Error: Start date must be before end date", "red"))
+            return
+    except ValueError:
+        print(colored("Error: Invalid date format. Use YYYY-MM-DD", "red"))
+        return
+
+    run_backtest(
+        args.start,
+        args.end,
+        wing_width=args.wing_width,
+        credit=args.credit,
+        verbose=not args.quiet
+    )
+
+
+if __name__ == "__main__":
+    main()
