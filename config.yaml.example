@@ -16,6 +16,25 @@ additional_filters:
   prev_day_range_max: 2.0        # Max previous day range (%)
   check_vix_term_structure: true # Check VIX contango/backwardation
 
+# Economic calendar settings
+calendar:
+  # Events to always flag as high-impact (ForexFactory sometimes misses these)
+  always_watch:
+    - "FOMC"
+    - "Fed Interest Rate Decision"
+    - "Non-Farm Payrolls"
+    - "NFP"
+    - "CPI"
+    - "Core CPI"
+    - "PPI"
+    - "JOLTS"
+    - "PCE"
+    - "Core PCE"
+    - "GDP"
+    - "Retail Sales"
+  # Use backup API if primary fails
+  use_backup_api: true
+
 # Telegram notifications (optional)
 # Get bot token from @BotFather, chat_id by messaging your bot
 telegram:

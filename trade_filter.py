@@ -262,44 +262,126 @@ def calculate_strikes(spx_price, otm_percent=1.0, wing_width=25):
     return call_strike, put_strike
 
 
-def check_economic_calendar():
+def check_economic_calendar(config=None):
     """
-    Check ForexFactory calendar for high-impact USD events today.
-    Uses free API from nfs.faireconomy.media (no API key required).
+    Check economic calendars for high-impact USD events today.
+    Uses ForexFactory API as primary, with backup from Trading Economics.
+    Also checks against a configurable watchlist for important events.
     """
     today = date.today().strftime('%Y-%m-%d')
 
-    try:
-        url = "https://nfs.faireconomy.media/ff_calendar_thisweek.json"
-        response = requests.get(url, timeout=10)
-        response.raise_for_status()
-        data = response.json()
+    # Get watchlist from config
+    watchlist = []
+    use_backup = True
+    if config and 'calendar' in config:
+        watchlist = [w.upper() for w in config['calendar'].get('always_watch', [])]
+        use_backup = config['calendar'].get('use_backup_api', True)
 
+    def is_watched_event(title):
+        """Check if event title matches any watchlist item."""
+        title_upper = title.upper()
+        return any(watch in title_upper for watch in watchlist)
+
+    def parse_forexfactory(data):
+        """Parse ForexFactory API response."""
         high_impact_events = []
+        all_usd_high = []
+
         for event in data:
             country = event.get('country', '')
             impact = event.get('impact', '')
             event_date = event.get('date', '')[:10]
+            title = event.get('title', 'Unknown Event')
 
-            if country == 'USD' and impact == 'High' and event_date == today:
-                event_time = event.get('date', '')[11:16]
-                high_impact_events.append({
-                    'name': event.get('title', 'Unknown Event'),
-                    'time': event_time or 'All Day',
-                    'impact': impact
-                })
+            if country == 'USD' and impact == 'High':
+                all_usd_high.append(f"{event_date}: {title}")
+
+            # Match if: USD + today + (High impact OR in watchlist)
+            if country == 'USD' and event_date == today:
+                if impact == 'High' or is_watched_event(title):
+                    event_time = event.get('date', '')[11:16]
+                    high_impact_events.append({
+                        'name': title,
+                        'time': event_time or 'All Day',
+                        'impact': impact if impact == 'High' else 'Watchlist'
+                    })
+
+        return high_impact_events, all_usd_high
+
+    def fetch_forexfactory():
+        """Fetch from ForexFactory API."""
+        url = "https://nfs.faireconomy.media/ff_calendar_thisweek.json"
+        response = requests.get(url, timeout=10)
+        response.raise_for_status()
+        return response.json()
+
+    def fetch_trading_economics():
+        """Fetch from Trading Economics calendar page (scrape JSON from HTML)."""
+        url = f"https://tradingeconomics.com/calendar"
+        headers = {'User-Agent': 'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36'}
+        response = requests.get(url, headers=headers, timeout=10)
+        response.raise_for_status()
+
+        # Try to find embedded JSON data
+        import re
+        json_match = re.search(r'var defined = (\[.*?\]);', response.text, re.DOTALL)
+        if json_match:
+            import json
+            data = json.loads(json_match.group(1))
+            events = []
+            for item in data:
+                if item.get('Country') == 'United States':
+                    events.append({
+                        'country': 'USD',
+                        'title': item.get('Event', ''),
+                        'date': item.get('Date', ''),
+                        'impact': 'High' if item.get('Importance', 0) >= 3 else 'Medium'
+                    })
+            return events
+        return []
+
+    # Try primary API (ForexFactory)
+    try:
+        data = fetch_forexfactory()
+        high_impact_events, all_usd_high = parse_forexfactory(data)
 
         return {
             'has_high_impact': len(high_impact_events) > 0,
             'events': high_impact_events,
+            'all_usd_high_this_week': all_usd_high,
+            'source': 'ForexFactory',
             'error': None
         }
 
-    except requests.exceptions.RequestException as e:
+    except requests.exceptions.RequestException as primary_error:
+        # Try backup API if enabled
+        if use_backup:
+            try:
+                data = fetch_trading_economics()
+                high_impact_events, all_usd_high = parse_forexfactory(data)
+
+                return {
+                    'has_high_impact': len(high_impact_events) > 0,
+                    'events': high_impact_events,
+                    'all_usd_high_this_week': all_usd_high,
+                    'source': 'TradingEconomics (backup)',
+                    'error': None
+                }
+            except Exception as backup_error:
+                return {
+                    'has_high_impact': None,
+                    'events': [],
+                    'all_usd_high_this_week': [],
+                    'source': None,
+                    'error': f"Both APIs failed: {str(primary_error)}"
+                }
+
         return {
             'has_high_impact': None,
             'events': [],
-            'error': f"Calendar API failed: {str(e)}"
+            'all_usd_high_this_week': [],
+            'source': None,
+            'error': f"Calendar API failed: {str(primary_error)}"
         }
 
 
@@ -348,7 +430,7 @@ def evaluate_trade(config, use_additional_filters=False):
         return
 
     intraday_change = calculate_intraday_change(data['spx_current'], data['spx_open'])
-    calendar = check_economic_calendar()
+    calendar = check_economic_calendar(config)
 
     # Display market data
     print(colored("MARKET DATA:", "white", attrs=["bold", "underline"]))
@@ -399,11 +481,17 @@ def evaluate_trade(config, use_additional_filters=False):
         status = "NO GO"
         event_names = ', '.join([e['name'] for e in calendar['events']])
         reasons.append(f"High-impact economic event(s): {event_names}")
-        print(colored(f"  [FAIL] Rule 3: High-impact USD event(s) today:", "red"))
+        source = f" [{calendar.get('source', 'Unknown')}]" if calendar.get('source') else ""
+        print(colored(f"  [FAIL] Rule 3: High-impact USD event(s) today{source}:", "red"))
         for event in calendar['events']:
-            print(colored(f"         - {event['name']} @ {event['time']}", "red"))
+            impact_note = " (watchlist)" if event.get('impact') == 'Watchlist' else ""
+            print(colored(f"         - {event['name']} @ {event['time']}{impact_note}", "red"))
     else:
-        print(colored("  [PASS] Rule 3: No high-impact USD events today", "green"))
+        source = f" [{calendar.get('source', 'Unknown')}]" if calendar.get('source') else ""
+        print(colored(f"  [PASS] Rule 3: No high-impact USD events today{source}", "green"))
+        # Debug: show what USD high-impact events exist this week
+        if calendar.get('all_usd_high_this_week'):
+            print(colored(f"         (This week's USD high-impact: {calendar['all_usd_high_this_week']})", "cyan"))
 
     # ADDITIONAL FILTERS (if enabled)
     if use_additional_filters:
