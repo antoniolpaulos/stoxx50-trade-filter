@@ -1,37 +1,39 @@
-# SPX 0DTE Iron Condor Trade Filter Configuration
+# STOXX50 0DTE Iron Condor Trade Filter Configuration
+# Euro Stoxx 50 Options
 
 # Rule thresholds
 rules:
-  vix_max: 22                    # Rule 1: Max VIX level
+  vstoxx_max: 25                 # Rule 1: Max VSTOXX level (typically higher than VIX)
   intraday_change_max: 1.0       # Rule 2: Max intraday change (%)
 
 # Strike calculation
 strikes:
   otm_percent: 1.0               # How far OTM for short strikes (%)
-  wing_width: 25                 # Wing width in points
+  wing_width: 50                 # Wing width in points
 
 # Additional filters (used with -a flag)
 additional_filters:
   ma_deviation_max: 3.0          # Max % deviation from 20 DMA
   prev_day_range_max: 2.0        # Max previous day range (%)
-  check_vix_term_structure: true # Check VIX contango/backwardation
+  check_vstoxx_term_structure: false  # VSTOXX term structure data limited on yfinance
 
 # Economic calendar settings
 calendar:
-  # Events to always flag as high-impact (ForexFactory sometimes misses these)
+  # Events to always flag as high-impact (EUR/Eurozone focused)
   always_watch:
-    - "FOMC"
-    - "Fed Interest Rate Decision"
-    - "Non-Farm Payrolls"
-    - "NFP"
-    - "CPI"
-    - "Core CPI"
-    - "PPI"
-    - "JOLTS"
-    - "PCE"
-    - "Core PCE"
-    - "GDP"
-    - "Retail Sales"
+    - "ECB"
+    - "ECB Interest Rate Decision"
+    - "ECB Press Conference"
+    - "Eurozone CPI"
+    - "Eurozone GDP"
+    - "German CPI"
+    - "German GDP"
+    - "German ZEW"
+    - "German Ifo"
+    - "French CPI"
+    - "Italian CPI"
+    - "PMI"
+    - "Eurozone Unemployment"
   # Use backup API if primary fails
   use_backup_api: true
 
