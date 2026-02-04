@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
-SPX 0DTE Iron Condor Trade Filter
-Determines if market conditions are favorable for trading.
+STOXX50 0DTE Iron Condor Trade Filter
+Determines if market conditions are favorable for trading Euro Stoxx 50 options.
 """
 
 import argparse
@@ -20,17 +20,17 @@ EXAMPLE_CONFIG_PATH = Path(__file__).parent / "config.yaml.example"
 # Default configuration (used if no config file)
 DEFAULT_CONFIG = {
     'rules': {
-        'vix_max': 22,
+        'vix_warn': 22,  # VIX warning threshold (not a blocking rule)
         'intraday_change_max': 1.0
     },
     'strikes': {
         'otm_percent': 1.0,
-        'wing_width': 25
+        'wing_width': 50  # Euro Stoxx 50 points
     },
     'additional_filters': {
         'ma_deviation_max': 3.0,
         'prev_day_range_max': 2.0,
-        'check_vix_term_structure': True
+        'check_vstoxx_term_structure': False  # VSTOXX term structure data limited
     },
     'telegram': {
         'enabled': False,
@@ -77,7 +77,7 @@ def telegram_needs_setup(config):
 def setup_config():
     """Interactive setup wizard for config.yaml."""
     print("\n" + "=" * 60)
-    print(colored("  TRADE FILTER SETUP", "cyan", attrs=["bold"]))
+    print(colored("  STOXX50 TRADE FILTER SETUP", "cyan", attrs=["bold"]))
     print("=" * 60 + "\n")
 
     # Check if config exists
@@ -195,52 +195,46 @@ def check_and_prompt_setup(config):
 
 
 def get_market_data(include_history=False):
-    """Fetch current VIX and S&P 500 data."""
+    """Fetch current VIX and Euro Stoxx 50 data."""
     vix = yf.Ticker("^VIX")
-    spx = yf.Ticker("^GSPC")
+    stoxx = yf.Ticker("^STOXX50E")
 
     vix_data = vix.history(period="5d")
-    spx_data = spx.history(period="5d" if include_history else "1d")
+    stoxx_data = stoxx.history(period="5d" if include_history else "1d")
 
-    if vix_data.empty or spx_data.empty:
+    if stoxx_data.empty:
         raise ValueError("Unable to fetch market data. Market may be closed.")
 
     result = {
-        'vix': vix_data['Close'].iloc[-1],
-        'spx_current': spx_data['Close'].iloc[-1],
-        'spx_open': spx_data['Open'].iloc[-1]
+        'stoxx_current': stoxx_data['Close'].iloc[-1],
+        'stoxx_open': stoxx_data['Open'].iloc[-1]
     }
 
-    if include_history and len(spx_data) >= 2:
+    # VIX is optional (warning only)
+    if not vix_data.empty:
+        result['vix'] = vix_data['Close'].iloc[-1]
+
+    if include_history and len(stoxx_data) >= 2:
         # Previous day data for additional filters
-        prev_day = spx_data.iloc[-2]
+        prev_day = stoxx_data.iloc[-2]
         result['prev_high'] = prev_day['High']
         result['prev_low'] = prev_day['Low']
         result['prev_close'] = prev_day['Close']
         result['prev_range_pct'] = ((prev_day['High'] - prev_day['Low']) / prev_day['Close']) * 100
 
         # Calculate 20-day moving average (approximate with available data)
-        if len(spx_data) >= 5:
-            result['ma_20_approx'] = spx_data['Close'].mean()  # Use available data
+        if len(stoxx_data) >= 5:
+            result['ma_20_approx'] = stoxx_data['Close'].mean()  # Use available data
 
         # Get more history for proper MA calculation
-        spx_extended = yf.Ticker("^GSPC").history(period="1mo")
-        if len(spx_extended) >= 20:
-            result['ma_20'] = spx_extended['Close'].tail(20).mean()
+        stoxx_extended = yf.Ticker("^STOXX50E").history(period="1mo")
+        if len(stoxx_extended) >= 20:
+            result['ma_20'] = stoxx_extended['Close'].tail(20).mean()
         else:
-            result['ma_20'] = spx_extended['Close'].mean()
+            result['ma_20'] = stoxx_extended['Close'].mean()
 
-    # VIX term structure (VIX vs VIX3M)
-    if include_history:
-        try:
-            vix3m = yf.Ticker("^VIX3M")
-            vix3m_data = vix3m.history(period="1d")
-            if not vix3m_data.empty:
-                result['vix3m'] = vix3m_data['Close'].iloc[-1]
-                result['vix_contango'] = result['vix3m'] > result['vix']
-        except Exception:
-            result['vix3m'] = None
-            result['vix_contango'] = None
+    # VSTOXX term structure data is limited on yfinance
+    # Skipping term structure check for Euro Stoxx 50
 
     return result
 
@@ -250,21 +244,21 @@ def calculate_intraday_change(current, open_price):
     return ((current - open_price) / open_price) * 100
 
 
-def calculate_strikes(spx_price, otm_percent=1.0, wing_width=25):
-    """Calculate OTM call and put strikes (rounded to 5-point increments)."""
-    call_strike = spx_price * (1 + otm_percent / 100)
-    put_strike = spx_price * (1 - otm_percent / 100)
+def calculate_strikes(stoxx_price, otm_percent=1.0, wing_width=50):
+    """Calculate OTM call and put strikes (rounded to nearest integer)."""
+    call_strike = stoxx_price * (1 + otm_percent / 100)
+    put_strike = stoxx_price * (1 - otm_percent / 100)
 
-    # Round to nearest 5 (SPX options trade in 5-point increments)
-    call_strike = round(call_strike / 5) * 5
-    put_strike = round(put_strike / 5) * 5
+    # Round to nearest integer (Euro Stoxx 50 options use 1-point increments)
+    call_strike = round(call_strike)
+    put_strike = round(put_strike)
 
     return call_strike, put_strike
 
 
 def check_economic_calendar(config=None):
     """
-    Check economic calendars for high-impact USD events today.
+    Check economic calendars for high-impact EUR events today.
     Uses ForexFactory API as primary, with backup from Trading Economics.
     Also checks against a configurable watchlist for important events.
     """
@@ -283,9 +277,9 @@ def check_economic_calendar(config=None):
         return any(watch in title_upper for watch in watchlist)
 
     def parse_forexfactory(data):
-        """Parse ForexFactory API response."""
+        """Parse ForexFactory API response for EUR events."""
         high_impact_events = []
-        all_usd_high = []
+        all_eur_high = []
 
         for event in data:
             country = event.get('country', '')
@@ -293,11 +287,11 @@ def check_economic_calendar(config=None):
             event_date = event.get('date', '')[:10]
             title = event.get('title', 'Unknown Event')
 
-            if country == 'USD' and impact == 'High':
-                all_usd_high.append(f"{event_date}: {title}")
+            if country == 'EUR' and impact == 'High':
+                all_eur_high.append(f"{event_date}: {title}")
 
-            # Match if: USD + today + (High impact OR in watchlist)
-            if country == 'USD' and event_date == today:
+            # Match if: EUR + today + (High impact OR in watchlist)
+            if country == 'EUR' and event_date == today:
                 if impact == 'High' or is_watched_event(title):
                     event_time = event.get('date', '')[11:16]
                     high_impact_events.append({
@@ -306,7 +300,7 @@ def check_economic_calendar(config=None):
                         'impact': impact if impact == 'High' else 'Watchlist'
                     })
 
-        return high_impact_events, all_usd_high
+        return high_impact_events, all_eur_high
 
     def fetch_forexfactory():
         """Fetch from ForexFactory API."""
@@ -330,9 +324,11 @@ def check_economic_calendar(config=None):
             data = json.loads(json_match.group(1))
             events = []
             for item in data:
-                if item.get('Country') == 'United States':
+                # Match Eurozone countries
+                eurozone_countries = ['Euro Area', 'Germany', 'France', 'Italy', 'Spain', 'Netherlands']
+                if item.get('Country') in eurozone_countries:
                     events.append({
-                        'country': 'USD',
+                        'country': 'EUR',
                         'title': item.get('Event', ''),
                         'date': item.get('Date', ''),
                         'impact': 'High' if item.get('Importance', 0) >= 3 else 'Medium'
@@ -343,12 +339,12 @@ def check_economic_calendar(config=None):
     # Try primary API (ForexFactory)
     try:
         data = fetch_forexfactory()
-        high_impact_events, all_usd_high = parse_forexfactory(data)
+        high_impact_events, all_eur_high = parse_forexfactory(data)
 
         return {
             'has_high_impact': len(high_impact_events) > 0,
             'events': high_impact_events,
-            'all_usd_high_this_week': all_usd_high,
+            'all_eur_high_this_week': all_eur_high,
             'source': 'ForexFactory',
             'error': None
         }
@@ -358,12 +354,12 @@ def check_economic_calendar(config=None):
         if use_backup:
             try:
                 data = fetch_trading_economics()
-                high_impact_events, all_usd_high = parse_forexfactory(data)
+                high_impact_events, all_eur_high = parse_forexfactory(data)
 
                 return {
                     'has_high_impact': len(high_impact_events) > 0,
                     'events': high_impact_events,
-                    'all_usd_high_this_week': all_usd_high,
+                    'all_eur_high_this_week': all_eur_high,
                     'source': 'TradingEconomics (backup)',
                     'error': None
                 }
@@ -371,7 +367,7 @@ def check_economic_calendar(config=None):
                 return {
                     'has_high_impact': None,
                     'events': [],
-                    'all_usd_high_this_week': [],
+                    'all_eur_high_this_week': [],
                     'source': None,
                     'error': f"Both APIs failed: {str(primary_error)}"
                 }
@@ -379,7 +375,7 @@ def check_economic_calendar(config=None):
         return {
             'has_high_impact': None,
             'events': [],
-            'all_usd_high_this_week': [],
+            'all_eur_high_this_week': [],
             'source': None,
             'error': f"Calendar API failed: {str(primary_error)}"
         }
@@ -411,14 +407,14 @@ def send_telegram_message(config, message):
 def evaluate_trade(config, use_additional_filters=False):
     """Main function to evaluate trade conditions."""
     print("\n" + "=" * 60)
-    print(colored("  SPX 0DTE IRON CONDOR TRADE FILTER", "cyan", attrs=["bold"]))
+    print(colored("  STOXX50 0DTE IRON CONDOR TRADE FILTER", "cyan", attrs=["bold"]))
     print(colored(f"  {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}", "cyan"))
     if use_additional_filters:
         print(colored("  [Additional filters enabled]", "yellow"))
     print("=" * 60 + "\n")
 
     # Load thresholds from config
-    vix_max = config['rules']['vix_max']
+    vix_warn = config['rules'].get('vix_warn', 22)
     intraday_max = config['rules']['intraday_change_max']
     otm_percent = config['strikes']['otm_percent']
     wing_width = config['strikes']['wing_width']
@@ -429,25 +425,23 @@ def evaluate_trade(config, use_additional_filters=False):
         print(colored(f"[ERROR] {e}", "red", attrs=["bold"]))
         return
 
-    intraday_change = calculate_intraday_change(data['spx_current'], data['spx_open'])
+    intraday_change = calculate_intraday_change(data['stoxx_current'], data['stoxx_open'])
     calendar = check_economic_calendar(config)
 
     # Display market data
     print(colored("MARKET DATA:", "white", attrs=["bold", "underline"]))
-    print(f"  VIX:              {data['vix']:.2f}")
-    print(f"  SPX Current:      {data['spx_current']:.2f}")
-    print(f"  SPX Open:         {data['spx_open']:.2f}")
+    if 'vix' in data:
+        print(f"  VIX:              {data['vix']:.2f}")
+    print(f"  STOXX Current:    {data['stoxx_current']:.2f}")
+    print(f"  STOXX Open:       {data['stoxx_open']:.2f}")
     print(f"  Intraday Change:  {intraday_change:+.2f}%")
 
     if use_additional_filters:
         if 'ma_20' in data:
-            ma_deviation = ((data['spx_current'] - data['ma_20']) / data['ma_20']) * 100
+            ma_deviation = ((data['stoxx_current'] - data['ma_20']) / data['ma_20']) * 100
             print(f"  20 DMA:           {data['ma_20']:.2f} ({ma_deviation:+.2f}% from current)")
         if 'prev_range_pct' in data:
             print(f"  Prev Day Range:   {data['prev_range_pct']:.2f}%")
-        if 'vix3m' in data and data['vix3m']:
-            structure = "Contango" if data['vix_contango'] else "Backwardation"
-            print(f"  VIX3M:            {data['vix3m']:.2f} ({structure})")
     print()
 
     # Evaluate rules
@@ -455,43 +449,44 @@ def evaluate_trade(config, use_additional_filters=False):
     reasons = []
     warnings = []
 
-    # RULE 1: VIX check
     print(colored("RULE EVALUATION:", "white", attrs=["bold", "underline"]))
-    if data['vix'] > vix_max:
-        status = "NO GO"
-        reasons.append(f"Volatility too high (VIX > {vix_max})")
-        print(colored(f"  [FAIL] Rule 1: VIX = {data['vix']:.2f} (> {vix_max})", "red"))
-    else:
-        print(colored(f"  [PASS] Rule 1: VIX = {data['vix']:.2f} (<= {vix_max})", "green"))
 
-    # RULE 2: Intraday change check
+    # VIX check (warning only, not a blocking rule)
+    if 'vix' in data:
+        if data['vix'] > vix_warn:
+            warnings.append(f"VIX elevated ({data['vix']:.2f} > {vix_warn})")
+            print(colored(f"  [WARN] VIX = {data['vix']:.2f} (> {vix_warn}) - elevated volatility", "yellow"))
+        else:
+            print(colored(f"  [INFO] VIX = {data['vix']:.2f} (<= {vix_warn})", "green"))
+
+    # RULE 1: Intraday change check
     if abs(intraday_change) > intraday_max:
         status = "NO GO"
         direction = "up" if intraday_change > 0 else "down"
         reasons.append(f"Trend too strong ({intraday_change:+.2f}% {direction})")
-        print(colored(f"  [FAIL] Rule 2: Intraday change = {intraday_change:+.2f}% (|change| > {intraday_max}%)", "red"))
+        print(colored(f"  [FAIL] Rule 1: Intraday change = {intraday_change:+.2f}% (|change| > {intraday_max}%)", "red"))
     else:
-        print(colored(f"  [PASS] Rule 2: Intraday change = {intraday_change:+.2f}% (|change| <= {intraday_max}%)", "green"))
+        print(colored(f"  [PASS] Rule 1: Intraday change = {intraday_change:+.2f}% (|change| <= {intraday_max}%)", "green"))
 
-    # RULE 3: Economic calendar check
+    # RULE 2: Economic calendar check
     if calendar['error']:
-        print(colored(f"  [WARN] Rule 3: {calendar['error']}", "yellow"))
+        print(colored(f"  [WARN] Rule 2: {calendar['error']}", "yellow"))
         warnings.append(calendar['error'])
     elif calendar['has_high_impact']:
         status = "NO GO"
         event_names = ', '.join([e['name'] for e in calendar['events']])
         reasons.append(f"High-impact economic event(s): {event_names}")
         source = f" [{calendar.get('source', 'Unknown')}]" if calendar.get('source') else ""
-        print(colored(f"  [FAIL] Rule 3: High-impact USD event(s) today{source}:", "red"))
+        print(colored(f"  [FAIL] Rule 2: High-impact EUR event(s) today{source}:", "red"))
         for event in calendar['events']:
             impact_note = " (watchlist)" if event.get('impact') == 'Watchlist' else ""
             print(colored(f"         - {event['name']} @ {event['time']}{impact_note}", "red"))
     else:
         source = f" [{calendar.get('source', 'Unknown')}]" if calendar.get('source') else ""
-        print(colored(f"  [PASS] Rule 3: No high-impact USD events today{source}", "green"))
-        # Debug: show what USD high-impact events exist this week
-        if calendar.get('all_usd_high_this_week'):
-            print(colored(f"         (This week's USD high-impact: {calendar['all_usd_high_this_week']})", "cyan"))
+        print(colored(f"  [PASS] Rule 2: No high-impact EUR events today{source}", "green"))
+        # Debug: show what EUR high-impact events exist this week
+        if calendar.get('all_eur_high_this_week'):
+            print(colored(f"         (This week's EUR high-impact: {calendar['all_eur_high_this_week']})", "cyan"))
 
     # ADDITIONAL FILTERS (if enabled)
     if use_additional_filters:
@@ -501,11 +496,11 @@ def evaluate_trade(config, use_additional_filters=False):
 
         # Filter A: MA deviation
         if 'ma_20' in data:
-            ma_deviation = ((data['spx_current'] - data['ma_20']) / data['ma_20']) * 100
+            ma_deviation = ((data['stoxx_current'] - data['ma_20']) / data['ma_20']) * 100
             ma_max = af_config['ma_deviation_max']
             if abs(ma_deviation) > ma_max:
                 status = "NO GO"
-                reasons.append(f"SPX too far from 20 DMA ({ma_deviation:+.2f}%)")
+                reasons.append(f"STOXX too far from 20 DMA ({ma_deviation:+.2f}%)")
                 print(colored(f"  [FAIL] Filter A: MA deviation = {ma_deviation:+.2f}% (|dev| > {ma_max}%)", "red"))
             else:
                 print(colored(f"  [PASS] Filter A: MA deviation = {ma_deviation:+.2f}% (|dev| <= {ma_max}%)", "green"))
@@ -520,15 +515,6 @@ def evaluate_trade(config, use_additional_filters=False):
             else:
                 print(colored(f"  [PASS] Filter B: Prev day range = {data['prev_range_pct']:.2f}% (<= {range_max}%)", "green"))
 
-        # Filter C: VIX term structure
-        if af_config.get('check_vix_term_structure') and 'vix_contango' in data:
-            if data['vix_contango'] is not None:
-                if data['vix_contango']:
-                    print(colored("  [PASS] Filter C: VIX in contango (normal)", "green"))
-                else:
-                    warnings.append("VIX in backwardation - elevated fear")
-                    print(colored("  [WARN] Filter C: VIX in backwardation (elevated fear)", "yellow"))
-
     print()
 
     # Final verdict
@@ -537,16 +523,16 @@ def evaluate_trade(config, use_additional_filters=False):
 
     # Build notification message
     notification_lines = [
-        f"<b>SPX 0DTE Iron Condor - {datetime.now().strftime('%Y-%m-%d %H:%M')}</b>",
+        f"<b>STOXX50 0DTE Iron Condor - {datetime.now().strftime('%Y-%m-%d %H:%M')}</b>",
         "",
-        f"VIX: {data['vix']:.2f}",
-        f"SPX: {data['spx_current']:.2f}",
+        f"VIX: {data.get('vix', 'N/A'):.2f}" if 'vix' in data else "VIX: N/A",
+        f"STOXX: {data['stoxx_current']:.2f}",
         f"Intraday: {intraday_change:+.2f}%",
         ""
     ]
 
     if status == "GO":
-        call_strike, put_strike = calculate_strikes(data['spx_current'], otm_percent, wing_width)
+        call_strike, put_strike = calculate_strikes(data['stoxx_current'], otm_percent, wing_width)
 
         print(colored("   ██████╗  ██████╗ ", "green", attrs=["bold"]))
         print(colored("  ██╔════╝ ██╔═══██╗", "green", attrs=["bold"]))
@@ -612,7 +598,7 @@ def evaluate_trade(config, use_additional_filters=False):
 
 def main():
     parser = argparse.ArgumentParser(
-        description='SPX 0DTE Iron Condor Trade Filter',
+        description='STOXX50 0DTE Iron Condor Trade Filter (Euro Stoxx 50)',
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 Examples:

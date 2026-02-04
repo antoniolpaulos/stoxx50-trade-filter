@@ -1,17 +1,16 @@
-# SPX 0DTE Iron Condor Trade Filter
+# STOXX50 0DTE Iron Condor Trade Filter
 
-A Python tool that determines if market conditions are favorable for trading SPX 0DTE (zero days to expiration) Iron Condors.
+A Python tool that determines if market conditions are favorable for trading Euro Stoxx 50 0DTE (zero days to expiration) Iron Condors.
 
 ## Features
 
 - **Rule-based Go/No-Go decision** with color-coded terminal output
-- **VIX check** - Avoids trading when volatility is too high
+- **VSTOXX check** - Avoids trading when volatility is too high
 - **Intraday change check** - Avoids strong trending days
-- **Economic calendar** - Automatically detects high-impact USD events (FOMC, CPI, NFP, etc.)
+- **Economic calendar** - Automatically detects high-impact EUR events (ECB, CPI, GDP, etc.)
 - **Additional filters** (optional):
   - 20-day moving average deviation
   - Previous day range
-  - VIX term structure (contango/backwardation)
 - **Telegram notifications** - Get GO/NO-GO alerts on your phone
 - **Configurable thresholds** via YAML config file
 - **Backtesting** - Test the strategy on historical data
@@ -20,8 +19,8 @@ A Python tool that determines if market conditions are favorable for trading SPX
 
 ```bash
 # Clone the repository
-git clone https://github.com/antoniolpaulos/spx-trade-filter.git
-cd spx-trade-filter
+git clone https://github.com/yourusername/stoxx50-trade-filter.git
+cd stoxx50-trade-filter
 
 # Create virtual environment
 python3 -m venv venv
@@ -40,17 +39,16 @@ Edit `config.yaml` to customize thresholds:
 
 ```yaml
 rules:
-  vix_max: 22                    # Max VIX level
+  vstoxx_max: 25                 # Max VSTOXX level
   intraday_change_max: 1.0       # Max intraday change (%)
 
 strikes:
   otm_percent: 1.0               # How far OTM for short strikes (%)
-  wing_width: 25                 # Wing width in points
+  wing_width: 50                 # Wing width in points
 
 additional_filters:
   ma_deviation_max: 3.0          # Max % deviation from 20 DMA
   prev_day_range_max: 2.0        # Max previous day range (%)
-  check_vix_term_structure: true
 ```
 
 ### Telegram Setup
@@ -90,20 +88,20 @@ python trade_filter.py --setup
 
 ```
 ============================================================
-  SPX 0DTE IRON CONDOR TRADE FILTER
-  2026-02-03 16:30:00
+  STOXX50 0DTE IRON CONDOR TRADE FILTER
+  2026-02-03 10:00:00
 ============================================================
 
 MARKET DATA:
-  VIX:              16.24
-  SPX Current:      6976.44
-  SPX Open:         6916.64
-  Intraday Change:  +0.86%
+  VSTOXX:           18.45
+  STOXX Current:    5124.32
+  STOXX Open:       5098.76
+  Intraday Change:  +0.50%
 
 RULE EVALUATION:
-  [PASS] Rule 1: VIX = 16.24 (<= 22)
-  [PASS] Rule 2: Intraday change = +0.86% (|change| <= 1.0%)
-  [PASS] Rule 3: No high-impact USD events today
+  [PASS] Rule 1: VSTOXX = 18.45 (<= 25)
+  [PASS] Rule 2: Intraday change = +0.50% (|change| <= 1.0%)
+  [PASS] Rule 3: No high-impact EUR events today
 
 VERDICT:
 
@@ -117,42 +115,42 @@ VERDICT:
   [GO] CONDITIONS FAVORABLE FOR IRON CONDOR
 
   RECOMMENDED STRIKES (1.0% OTM):
-    Short Call: 7045
-    Short Put:  6905
+    Short Call: 5175
+    Short Put:  5073
 
   Suggested structure:
-    Buy Put   @ 6880
-    Sell Put  @ 6905
-    Sell Call @ 7045
-    Buy Call  @ 7070
+    Buy Put   @ 5023
+    Sell Put  @ 5073
+    Sell Call @ 5175
+    Buy Call  @ 5225
 ```
 
 ## Scheduled Runs (Cron)
 
-To run automatically at **16:30 Amsterdam time** (10:30 ET, 1 hour after US market open) every weekday:
+To run automatically at **10:00 CET** (1 hour after Euro Stoxx 50 market open) every weekday:
 
 ```bash
 # Edit crontab
 crontab -e
 
 # Add this line (adjust paths as needed):
-# SPX 0DTE Iron Condor filter - runs 16:30 Amsterdam (10:30 ET) Mon-Fri
-30 16 * * 1-5 /path/to/spx-trade-filter/venv/bin/python /path/to/spx-trade-filter/trade_filter.py -a >> /path/to/spx-trade-filter/trade_filter.log 2>&1
+# STOXX50 0DTE Iron Condor filter - runs 10:00 CET Mon-Fri
+0 10 * * 1-5 /path/to/stoxx50-trade-filter/venv/bin/python /path/to/stoxx50-trade-filter/trade_filter.py -a >> /path/to/stoxx50-trade-filter/trade_filter.log 2>&1
 ```
 
 **Example with absolute paths:**
 
 ```bash
-30 16 * * 1-5 /home/projects/spx-trade-filter/venv/bin/python /home/projects/spx-trade-filter/trade_filter.py -a >> /home/projects/spx-trade-filter/trade_filter.log 2>&1
+0 10 * * 1-5 /home/projects/stoxx50-trade-filter/venv/bin/python /home/projects/stoxx50-trade-filter/trade_filter.py -a >> /home/projects/stoxx50-trade-filter/trade_filter.log 2>&1
 ```
 
 ### Time Zone Notes
 
-| Amsterdam | US Eastern | Event |
-|-----------|------------|-------|
-| 15:30 | 09:30 | US market opens |
-| 16:30 | 10:30 | **Cron runs here** |
-| 22:00 | 16:00 | US market closes |
+| CET | Event |
+|-----|-------|
+| 09:00 | Euro Stoxx 50 market opens |
+| 10:00 | **Cron runs here** |
+| 17:30 | Euro Stoxx 50 market closes |
 
 Ensure your server's timezone is set correctly:
 
@@ -169,13 +167,20 @@ Test the strategy on historical data:
 python backtest.py --start 2024-01-01 --end 2024-12-31
 
 # With custom parameters
-python backtest.py -s 2024-06-01 -e 2024-12-31 --credit 3.00 --wing-width 30
+python backtest.py -s 2024-06-01 -e 2024-12-31 --credit 3.00 --wing-width 75
 
 # Summary only (no daily details)
 python backtest.py -s 2024-01-01 -e 2024-12-31 --quiet
 ```
 
 **Note:** Backtesting does not include Rule 3 (economic calendar) as historical event data is not available.
+
+## Market Data
+
+| Data | Yahoo Finance Ticker |
+|------|---------------------|
+| Euro Stoxx 50 | `^STOXX50E` |
+| VSTOXX | `^V2TX` |
 
 ## Files
 
