@@ -1,5 +1,5 @@
 """
-Unit tests for rule evaluation engine.
+Unit tests for rule evaluation engine - testing real functions from trade_filter.py.
 """
 
 import pytest
@@ -10,261 +10,286 @@ from unittest.mock import Mock
 # Add parent directory to path for imports
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
+from trade_filter import calculate_intraday_change, calculate_strikes
 from exceptions import ValidationError
-from tests.fixtures.sample_data import TEST_SCENARIOS
 
 
-class TestRulesEngine:
-    """Test rule evaluation logic."""
+class TestCalculateIntradayChange:
+    """Test calculate_intraday_change function from trade_filter.py."""
     
-    def test_rule_1_vix_check_pass(self):
-        """Test Rule 1: VIX check - pass scenario."""
-        scenario = TEST_SCENARIOS['go_conditions']
-        vix_max = 22.0
+    def test_positive_change(self):
+        """Test intraday change calculation with positive movement."""
+        current_price = 5220.0
+        open_price = 5180.0
         
-        vix_current = scenario['vix']
+        change = calculate_intraday_change(current_price, open_price)
         
-        # Rule logic: VIX <= threshold
-        rule_pass = vix_current <= vix_max
-        
-        assert rule_pass is True
-        assert vix_current == 16.5
+        expected_change = ((5220.0 - 5180.0) / 5180.0) * 100
+        assert abs(change - expected_change) < 0.01
+        assert change > 0
+        assert abs(change - 0.77) < 0.01  # ~0.77% up
     
-    def test_rule_1_vix_check_fail(self):
-        """Test Rule 1: VIX check - fail scenario."""
-        scenario = TEST_SCENARIOS['no_go_vix_high']
-        vix_max = 22.0
+    def test_negative_change(self):
+        """Test intraday change calculation with negative movement."""
+        current_price = 5130.0
+        open_price = 5180.0
         
-        vix_current = scenario['vix']
+        change = calculate_intraday_change(current_price, open_price)
         
-        rule_pass = vix_current <= vix_max
-        
-        assert rule_pass is False
-        assert vix_current == 25.0
+        expected_change = ((5130.0 - 5180.0) / 5180.0) * 100
+        assert abs(change - expected_change) < 0.01
+        assert change < 0
+        assert abs(change - (-0.96)) < 0.01  # ~0.96% down
     
-    def test_rule_2_intraday_change_check_pass(self):
-        """Test Rule 2: Intraday change check - pass scenario."""
-        scenario = TEST_SCENARIOS['go_conditions']
-        max_change = 1.0
+    def test_zero_change(self):
+        """Test intraday change calculation with no movement."""
+        current_price = 5180.0
+        open_price = 5180.0
         
-        intraday_change = scenario['intraday_change']
+        change = calculate_intraday_change(current_price, open_price)
         
-        # Rule logic: |change| <= threshold
-        rule_pass = abs(intraday_change) <= max_change
-        
-        assert rule_pass is True
-        assert intraday_change == 0.5
+        assert change == 0.0
     
-    def test_rule_2_intraday_change_check_fail(self):
-        """Test Rule 2: Intraday change check - fail scenario."""
-        scenario = TEST_SCENARIOS['no_go_change_high']
-        max_change = 1.0
+    def test_stoxx50_realistic_values(self):
+        """Test with realistic STOXX50 values."""
+        # Scenario: up 0.86%
+        current_price = 5224.55
+        open_price = 5180.0
         
-        intraday_change = scenario['intraday_change']
+        change = calculate_intraday_change(current_price, open_price)
         
-        rule_pass = abs(intraday_change) <= max_change
+        assert abs(change - 0.86) < 0.01
         
-        assert rule_pass is False
-        assert intraday_change == 1.5
+        # Scenario: down 1.5%
+        current_price = 5102.3
+        open_price = 5180.0
+        
+        change = calculate_intraday_change(current_price, open_price)
+        
+        assert abs(change - (-1.5)) < 0.01
+
+
+class TestCalculateStrikes:
+    """Test calculate_strikes function from trade_filter.py."""
     
-    def test_rule_3_economic_calendar_check_pass(self):
-        """Test Rule 3: Economic calendar check - pass scenario."""
-        scenario = TEST_SCENARIOS['go_conditions']
-        
-        has_high_impact_events = scenario['high_impact_events']
-        
-        # Rule logic: No high-impact USD events
-        rule_pass = not has_high_impact_events
-        
-        assert rule_pass is True
-        assert has_high_impact_events is False
-    
-    def test_rule_3_economic_calendar_check_fail(self):
-        """Test Rule 3: Economic calendar check - fail scenario."""
-        scenario = TEST_SCENARIOS['no_go_events']
-        
-        has_high_impact_events = scenario['high_impact_events']
-        
-        rule_pass = not has_high_impact_events
-        
-        assert rule_pass is False
-        assert has_high_impact_events is True
-    
-    def test_all_rules_pass_go_verdict(self):
-        """Test overall GO verdict when all rules pass."""
-        scenario = TEST_SCENARIOS['go_conditions']
-        vix_max = 22.0
-        max_change = 1.0
-        
-        # Evaluate all three rules
-        rule1_pass = scenario['vix'] <= vix_max
-        rule2_pass = abs(scenario['intraday_change']) <= max_change
-        rule3_pass = not scenario['high_impact_events']
-        
-        # Overall verdict: AND logic (all must pass)
-        go_verdict = rule1_pass and rule2_pass and rule3_pass
-        
-        assert go_verdict is True
-        assert rule1_pass is True
-        assert rule2_pass is True
-        assert rule3_pass is True
-    
-    def test_any_rule_fail_no_go_verdict(self):
-        """Test overall NO-GO verdict when any rule fails."""
-        # Test each failure scenario
-        test_cases = [
-            ('no_go_vix_high', 'VIX too high'),
-            ('no_go_change_high', 'Intraday change too large'),
-            ('no_go_events', 'High impact events present')
-        ]
-        
-        vix_max = 22.0
-        max_change = 1.0
-        
-        for scenario_name, reason in test_cases:
-            scenario = TEST_SCENARIOS[scenario_name]
-            
-            rule1_pass = scenario['vix'] <= vix_max
-            rule2_pass = abs(scenario['intraday_change']) <= max_change
-            rule3_pass = not scenario['high_impact_events']
-            
-            go_verdict = rule1_pass and rule2_pass and rule3_pass
-            
-            assert go_verdict is False, f"Should be NO-GO for {reason}"
-    
-    def test_additional_filter_ma_deviation_pass(self):
-        """Test additional filter: 20-day MA deviation - pass."""
-        current_spx = 4800.0
-        ma_20 = 4700.0
-        max_deviation = 3.0
-        
-        deviation = abs((current_spx - ma_20) / ma_20) * 100
-        
-        filter_pass = deviation <= max_deviation
-        
-        assert filter_pass is True
-        assert abs(deviation - 2.13) < 0.01
-    
-    def test_additional_filter_ma_deviation_fail(self):
-        """Test additional filter: 20-day MA deviation - fail."""
-        current_spx = 5000.0
-        ma_20 = 4700.0
-        max_deviation = 3.0
-        
-        deviation = abs((current_spx - ma_20) / ma_20) * 100
-        
-        filter_pass = deviation <= max_deviation
-        
-        assert filter_pass is False
-        assert abs(deviation - 6.38) < 0.01
-    
-    def test_additional_filter_prev_day_range_pass(self):
-        """Test additional filter: Previous day range - pass."""
-        prev_high = 4850.0
-        prev_low = 4780.0
-        prev_open = 4800.0
-        max_range = 2.0
-        
-        prev_day_range = ((prev_high - prev_low) / prev_open) * 100
-        
-        filter_pass = prev_day_range <= max_range
-        
-        assert filter_pass is True
-        assert abs(prev_day_range - 1.46) < 0.01
-    
-    def test_additional_filter_prev_day_range_fail(self):
-        """Test additional filter: Previous day range - fail."""
-        prev_high = 4950.0
-        prev_low = 4750.0
-        prev_open = 4800.0
-        max_range = 2.0
-        
-        prev_day_range = ((prev_high - prev_low) / prev_open) * 100
-        
-        filter_pass = prev_day_range <= max_range
-        
-        assert filter_pass is False
-        assert abs(prev_day_range - 4.17) < 0.01
-    
-    def test_additional_filter_vix_term_structure_contango(self):
-        """Test additional filter: VIX term structure - contango (normal)."""
-        vix_current = 18.5
-        vix_3m = 21.2
-        
-        # Contango: VIX 3M > VIX Current (normal market state)
-        is_backwardation = vix_3m < vix_current
-        
-        # Filter warns about backwardation (unusual)
-        filter_pass = not is_backwardation  # Pass if not in backwardation
-        
-        assert filter_pass is True
-        assert is_backwardation is False
-    
-    def test_additional_filter_vix_term_structure_backwardation(self):
-        """Test additional filter: VIX term structure - backwardation (warning)."""
-        vix_current = 25.0
-        vix_3m = 22.0
-        
-        # Backwardation: VIX 3M < VIX Current (fear in market)
-        is_backwardation = vix_3m < vix_current
-        
-        filter_pass = not is_backwardation  # Fail if in backwardation
-        
-        assert filter_pass is False
-        assert is_backwardation is True
-    
-    def test_strike_calculation(self):
-        """Test strike price calculation."""
-        spx_current = 4860.0
+    def test_strike_calculation_default_percent(self):
+        """Test strike price calculation with default 1% OTM."""
+        stoxx_price = 5180.0
         otm_percent = 1.0
         
-        # Calculate short strikes
-        call_strike = spx_current * (1 + otm_percent / 100)
-        put_strike = spx_current * (1 - otm_percent / 100)
+        call_strike, put_strike = calculate_strikes(stoxx_price, otm_percent)
         
-        # Round to nearest 5 (SPX convention)
-        call_strike_rounded = round(call_strike / 5) * 5
-        put_strike_rounded = round(put_strike / 5) * 5
-        
-        assert call_strike_rounded == 4910
-        assert put_strike_rounded == 4810
+        # Expected: 5180 * 1.01 = 5231.8 -> 5232 (rounded to nearest integer)
+        # Expected: 5180 * 0.99 = 5128.2 -> 5128 (rounded to nearest integer)
+        assert call_strike == 5232
+        assert put_strike == 5128
     
     def test_strike_calculation_different_percentages(self):
         """Test strike calculation with different OTM percentages."""
-        spx_current = 4860.0
-        wing_width = 25
+        stoxx_price = 5180.0
         
-        test_percentages = [0.5, 1.0, 1.5, 2.0]
+        test_cases = [
+            (0.5, 5206, 5154),  # 5180 * 1.005 = 5205.9 -> 5206
+            (1.0, 5232, 5128),  # 5180 * 1.01 = 5231.8 -> 5232
+            (1.5, 5258, 5102),  # 5180 * 1.015 = 5257.7 -> 5258
+            (2.0, 5284, 5076),  # 5180 * 1.02 = 5283.6 -> 5284
+        ]
         
-        for otm_percent in test_percentages:
-            call_strike = spx_current * (1 + otm_percent / 100)
-            put_strike = spx_current * (1 - otm_percent / 100)
+        for otm_percent, expected_call, expected_put in test_cases:
+            call_strike, put_strike = calculate_strikes(stoxx_price, otm_percent)
             
-            call_rounded = round(call_strike / 5) * 5
-            put_rounded = round(put_strike / 5) * 5
-            
-            # Long strikes are further OTM by wing width
-            call_long = call_rounded + wing_width
-            put_long = put_rounded - wing_width
-            
-            # Verify wing width
-            assert call_long - call_rounded == wing_width
-            assert put_rounded - put_long == wing_width
+            assert call_strike == expected_call, f"Failed for {otm_percent}% call strike"
+            assert put_strike == expected_put, f"Failed for {otm_percent}% put strike"
     
-    def test_rule_evaluation_with_edge_cases(self):
-        """Test rule evaluation with edge case values."""
-        vix_max = 22.0
+    def test_strike_calculation_with_wing_width(self):
+        """Test strike calculation considering wing width."""
+        stoxx_price = 5180.0
+        otm_percent = 1.0
+        wing_width = 50
+        
+        call_strike, put_strike = calculate_strikes(stoxx_price, otm_percent, wing_width)
+        
+        # Short strikes
+        assert call_strike == 5232
+        assert put_strike == 5128
+        
+        # Long strikes (wing width away)
+        call_long = call_strike + wing_width
+        put_long = put_strike - wing_width
+        
+        assert call_long - call_strike == wing_width
+        assert put_strike - put_long == wing_width
+        assert call_long == 5282
+        assert put_long == 5078
+    
+    def test_strike_calculation_edge_cases(self):
+        """Test strike calculation edge cases."""
+        # Very high STOXX50 price
+        stoxx_price = 5500.0
+        call_strike, put_strike = calculate_strikes(stoxx_price, 1.0)
+        assert call_strike == 5555  # 5500 * 1.01 = 5555.0
+        assert put_strike == 5445  # 5500 * 0.99 = 5445.0
+        
+        # Lower STOXX50 price
+        stoxx_price = 4800.0
+        call_strike, put_strike = calculate_strikes(stoxx_price, 1.0)
+        assert call_strike == 4848  # 4800 * 1.01 = 4848.0
+        assert put_strike == 4752  # 4800 * 0.99 = 4752.0
+    
+    def test_strike_rounding_behavior(self):
+        """Test that strikes round to nearest integer (not 5-point like SPX)."""
+        stoxx_price = 5183.0  # Intentionally odd number
+        
+        call_strike, put_strike = calculate_strikes(stoxx_price, 1.0)
+        
+        # 5183 * 1.01 = 5234.83 -> 5235 (should round to nearest integer, not 5)
+        # 5183 * 0.99 = 5131.17 -> 5131
+        assert call_strike == 5235
+        assert put_strike == 5131
+        
+        # Verify it's NOT rounding to 5-point increments
+        assert call_strike % 1 == 0  # Should be integer
+        assert put_strike % 1 == 0   # Should be integer
+
+
+class TestRulesIntegration:
+    """Test rules integration with real functions."""
+    
+    def test_rule_1_vstoxx_check(self):
+        """Test Rule 1: VSTOXX threshold check."""
+        vstoxx_max = 25.0
+        
+        # Pass scenario
+        vstoxx_current = 18.5
+        rule_pass = vstoxx_current <= vstoxx_max
+        assert rule_pass is True
+        
+        # Fail scenario
+        vstoxx_current = 28.0
+        rule_pass = vstoxx_current <= vstoxx_max
+        assert rule_pass is False
+    
+    def test_rule_2_intraday_change_check(self):
+        """Test Rule 2: Intraday change threshold check."""
         max_change = 1.0
         
-        # Edge case: VIX exactly at threshold
-        vix_at_threshold = 22.0
-        rule1_pass = vix_at_threshold <= vix_max
-        assert rule1_pass is True
+        # Pass scenario
+        stoxx_current = 5220.0
+        stoxx_open = 5180.0
+        change = calculate_intraday_change(stoxx_current, stoxx_open)
+        rule_pass = abs(change) <= max_change
+        assert rule_pass is True
+        
+        # Fail scenario
+        stoxx_current = 5258.0  # ~1.5% up
+        stoxx_open = 5180.0
+        change = calculate_intraday_change(stoxx_current, stoxx_open)
+        rule_pass = abs(change) <= max_change
+        assert rule_pass is False
+    
+    def test_all_rules_combined(self):
+        """Test all rules combined with real calculations."""
+        # GO scenario
+        stoxx_current = 5220.0
+        stoxx_open = 5180.0
+        vstoxx_current = 18.5
+        high_impact_events = False
+        
+        change = calculate_intraday_change(stoxx_current, stoxx_open)
+        
+        rule1_pass = vstoxx_current <= 25.0
+        rule2_pass = abs(change) <= 1.0
+        rule3_pass = not high_impact_events
+        
+        go_verdict = rule1_pass and rule2_pass and rule3_pass
+        
+        assert go_verdict is True
+        
+        # NO-GO scenario - high VSTOXX
+        vstoxx_current = 28.0
+        rule1_pass = vstoxx_current <= 25.0
+        go_verdict = rule1_pass and rule2_pass and rule3_pass
+        assert go_verdict is False
+
+
+class TestAdditionalFilters:
+    """Test additional filter calculations."""
+    
+    def test_ma_deviation_calculation(self):
+        """Test MA deviation calculation."""
+        current_stoxx = 5180.0
+        ma_20 = 5050.0
+        
+        deviation = ((current_stoxx - ma_20) / ma_20) * 100
+        
+        assert abs(deviation - 2.57) < 0.01
+        
+        # Test pass/fail logic
+        max_deviation = 3.0
+        filter_pass = abs(deviation) <= max_deviation
+        assert filter_pass is True
+        
+        # Fail scenario
+        current_stoxx = 5300.0
+        deviation = ((current_stoxx - ma_20) / ma_20) * 100
+        filter_pass = abs(deviation) <= max_deviation
+        assert abs(deviation - 4.95) < 0.01
+        assert filter_pass is False
+    
+    def test_prev_day_range_calculation(self):
+        """Test previous day range calculation."""
+        prev_high = 5200.0
+        prev_low = 5140.0
+        prev_open = 5160.0
+        
+        prev_range = ((prev_high - prev_low) / prev_open) * 100
+        
+        assert abs(prev_range - 1.16) < 0.01
+        
+        # Test pass/fail logic
+        max_range = 2.0
+        filter_pass = prev_range <= max_range
+        assert filter_pass is True
+    
+    def test_vstoxx_term_structure(self):
+        """Test VSTOXX term structure analysis."""
+        vstoxx_current = 18.5
+        vstoxx_3m = 20.2
+        
+        # Contango: VSTOXX 3M > VSTOXX Current (normal)
+        is_backwardation = vstoxx_3m < vstoxx_current
+        filter_pass = not is_backwardation
+        
+        assert filter_pass is True
+        assert is_backwardation is False
+        
+        # Backwardation scenario
+        vstoxx_current = 25.0
+        vstoxx_3m = 22.0
+        is_backwardation = vstoxx_3m < vstoxx_current
+        filter_pass = not is_backwardation
+        
+        assert filter_pass is False
+        assert is_backwardation is True
+
+
+class TestEdgeCaseRules:
+    """Test rule evaluation with edge case values."""
+    
+    def test_exact_threshold_values(self):
+        """Test rule evaluation at exact threshold values."""
+        vstoxx_max = 25.0
+        max_change = 1.0
+        
+        # Edge case: VSTOXX exactly at threshold
+        vstoxx_at_threshold = 25.0
+        rule1_pass = vstoxx_at_threshold <= vstoxx_max
+        assert rule1_pass is True  # Should pass (<=)
         
         # Edge case: Change exactly at threshold
         change_at_threshold = 1.0
         rule2_pass = abs(change_at_threshold) <= max_change
-        assert rule2_pass is True
+        assert rule2_pass is True  # Should pass (<=)
         
         # Edge case: Change negative at threshold
         change_negative_threshold = -1.0
@@ -273,12 +298,12 @@ class TestRulesEngine:
     
     def test_invalid_rule_parameters(self):
         """Test rule evaluation with invalid parameters."""
-        # Negative VIX (should be impossible)
-        invalid_vix = -5.0
+        # Negative VSTOXX (should be impossible)
+        invalid_vstoxx = -5.0
         
-        if invalid_vix <= 0:
+        if invalid_vstoxx <= 0:
             with pytest.raises(ValidationError):
-                raise ValidationError("VIX cannot be negative")
+                raise ValidationError("VSTOXX cannot be negative")
         
         # Invalid max change percentage
         invalid_max_change = -1.0
@@ -287,9 +312,9 @@ class TestRulesEngine:
             with pytest.raises(ValidationError):
                 raise ValidationError("Max change percentage cannot be negative")
         
-        # SPX price too low
-        invalid_spx = 0.0
+        # STOXX50 price too low
+        invalid_stoxx = 0.0
         
-        if invalid_spx <= 0:
+        if invalid_stoxx <= 0:
             with pytest.raises(ValidationError):
-                raise ValidationError("SPX price must be positive")
+                raise ValidationError("STOXX50 price must be positive")

@@ -12,6 +12,7 @@ import requests
 from datetime import datetime, date, timedelta
 from termcolor import colored
 from pathlib import Path
+from exceptions import MarketDataError
 
 # Default config path
 DEFAULT_CONFIG_PATH = Path(__file__).parent / "config.yaml"
@@ -203,7 +204,7 @@ def get_market_data(include_history=False):
     stoxx_data = stoxx.history(period="5d" if include_history else "1d")
 
     if stoxx_data.empty:
-        raise ValueError("Unable to fetch market data. Market may be closed.")
+        raise MarketDataError("Unable to fetch market data. Market may be closed.")
 
     result = {
         'stoxx_current': stoxx_data['Close'].iloc[-1],

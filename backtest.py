@@ -9,55 +9,49 @@ import yfinance as yf
 import pandas as pd
 from datetime import datetime, timedelta
 from termcolor import colored
+from trade_filter import calculate_strikes
 
 
 def get_historical_data(start_date, end_date):
-    """Fetch historical VSTOXX and Euro Stoxx 50 data."""
+    """Fetch historical VIX and Euro Stoxx 50 data.
+
+    Note: VSTOXX (V2TX.DE) is unavailable via yfinance, so we use VIX as a proxy.
+    VIX is used as a warning indicator only, not a blocking rule.
+    """
     # Add buffer days to ensure we have data for the full range
     buffer_start = (datetime.strptime(start_date, '%Y-%m-%d') - timedelta(days=5)).strftime('%Y-%m-%d')
     buffer_end = (datetime.strptime(end_date, '%Y-%m-%d') + timedelta(days=5)).strftime('%Y-%m-%d')
 
-    vstoxx = yf.Ticker("V2TX.DE")
+    vix = yf.Ticker("^VIX")
     stoxx = yf.Ticker("^STOXX50E")
 
-    vstoxx_data = vstoxx.history(start=buffer_start, end=buffer_end)
+    vix_data = vix.history(start=buffer_start, end=buffer_end)
     stoxx_data = stoxx.history(start=buffer_start, end=buffer_end)
 
-    return vstoxx_data, stoxx_data
+    return vix_data, stoxx_data
 
 
-def calculate_strikes(stoxx_price, otm_percent=1.0):
-    """Calculate 1% OTM call and put strikes (rounded to nearest integer)."""
-    call_strike = stoxx_price * (1 + otm_percent / 100)
-    put_strike = stoxx_price * (1 - otm_percent / 100)
-
-    # Round to nearest integer (Euro Stoxx 50 options use 1-point increments)
-    call_strike = round(call_strike)
-    put_strike = round(put_strike)
-
-    return call_strike, put_strike
-
-
-def evaluate_day(vstoxx_close, stoxx_open, stoxx_price_at_entry):
+def evaluate_day(vix_close, stoxx_open, stoxx_price_at_entry):
     """
     Evaluate if we would trade on this day.
-    Returns (should_trade, reason) tuple.
+    Returns (should_trade, reason, intraday_change, vix_warning) tuple.
+
+    Note: VIX is used as warning-only (VSTOXX unavailable via yfinance).
     """
     # Calculate intraday change at entry time (~10:00 CET)
     # Using price between open and close as approximation
     intraday_change = ((stoxx_price_at_entry - stoxx_open) / stoxx_open) * 100
 
-    # Rule 1: VSTOXX check
-    if vstoxx_close > 25:
-        return False, f"VSTOXX too high ({vstoxx_close:.2f})", intraday_change
+    # VIX warning (non-blocking) - threshold 22
+    vix_warning = vix_close > 22 if vix_close is not None else False
 
-    # Rule 2: Intraday change check
+    # Rule 1: Intraday change check (blocking)
     if abs(intraday_change) > 1.0:
-        return False, f"Trend too strong ({intraday_change:+.2f}%)", intraday_change
+        return False, f"Trend too strong ({intraday_change:+.2f}%)", intraday_change, vix_warning
 
-    # Rule 3: Economic calendar - skipped for backtest (data not available historically)
+    # Rule 2: Economic calendar - skipped for backtest (data not available historically)
 
-    return True, "Conditions met", intraday_change
+    return True, "Conditions met", intraday_change, vix_warning
 
 
 def simulate_iron_condor(entry_price, stoxx_close, call_strike, put_strike, wing_width=50, credit=2.50):
@@ -102,7 +96,7 @@ def run_backtest(start_date, end_date, wing_width=50, credit=2.50, verbose=True)
 
     # Fetch data
     print("Fetching historical data...")
-    vstoxx_data, stoxx_data = get_historical_data(start_date, end_date)
+    vix_data, stoxx_data = get_historical_data(start_date, end_date)
 
     # Filter to date range
     start_dt = datetime.strptime(start_date, '%Y-%m-%d')
@@ -119,7 +113,7 @@ def run_backtest(start_date, end_date, wing_width=50, credit=2.50, verbose=True)
     print("Running backtest...\n")
 
     if verbose:
-        print(colored("DATE        VSTOXX  STOXX OPEN ENTRY    CHANGE   TRADE?   STRIKES        CLOSE     P&L", "white", attrs=["bold"]))
+        print(colored("DATE        VIX     STOXX OPEN ENTRY    CHANGE   TRADE?   STRIKES        CLOSE     P&L", "white", attrs=["bold"]))
         print("-" * 95)
 
     # Iterate through trading days
@@ -133,22 +127,27 @@ def run_backtest(start_date, end_date, wing_width=50, credit=2.50, verbose=True)
         # Get day's data
         try:
             stoxx_row = stoxx_data.loc[date]
-            vstoxx_row = vstoxx_data.loc[date]
         except KeyError:
             continue
+
+        # VIX data may not be available for all days (different market hours)
+        try:
+            vix_row = vix_data.loc[date]
+            vix_close = vix_row['Close']
+        except KeyError:
+            vix_close = None
 
         stoxx_open = stoxx_row['Open']
         stoxx_high = stoxx_row['High']
         stoxx_low = stoxx_row['Low']
         stoxx_close = stoxx_row['Close']
-        vstoxx_close = vstoxx_row['Close']
 
         # Estimate price at 10:00 CET entry (roughly 1 hour after market open)
         # Using weighted average: 70% open + 30% towards midpoint
         stoxx_entry = stoxx_open + (((stoxx_high + stoxx_low) / 2) - stoxx_open) * 0.3
 
         # Evaluate rules
-        should_trade, reason, intraday_change = evaluate_day(vstoxx_close, stoxx_open, stoxx_entry)
+        should_trade, reason, intraday_change, vix_warning = evaluate_day(vix_close, stoxx_open, stoxx_entry)
 
         if should_trade:
             trades_taken += 1
@@ -165,7 +164,8 @@ def run_backtest(start_date, end_date, wing_width=50, credit=2.50, verbose=True)
 
             results.append({
                 'date': date_str,
-                'vstoxx': vstoxx_close,
+                'vix': vix_close,
+                'vix_warning': vix_warning,
                 'stoxx_open': stoxx_open,
                 'stoxx_entry': stoxx_entry,
                 'stoxx_close': stoxx_close,
@@ -176,15 +176,18 @@ def run_backtest(start_date, end_date, wing_width=50, credit=2.50, verbose=True)
                 'pnl': pnl
             })
 
+            vix_str = f"{vix_close:6.2f}" if vix_close is not None else "  N/A "
+            warn_marker = colored("!", "yellow") if vix_warning else " "
             if verbose:
-                print(f"{date_str}  {vstoxx_close:6.2f}  {stoxx_open:8.2f}  {stoxx_entry:8.2f}  {intraday_change:+5.2f}%   "
+                print(f"{date_str}  {vix_str}{warn_marker} {stoxx_open:8.2f}  {stoxx_entry:8.2f}  {intraday_change:+5.2f}%   "
                       f"{colored('YES', 'green')}      {put_strike:.0f}/{call_strike:.0f}      {stoxx_close:8.2f}  "
                       f"{colored(f'€{pnl:+.0f}', pnl_color)}")
         else:
             trades_skipped += 1
             results.append({
                 'date': date_str,
-                'vstoxx': vstoxx_close,
+                'vix': vix_close,
+                'vix_warning': vix_warning,
                 'stoxx_open': stoxx_open,
                 'stoxx_entry': stoxx_entry,
                 'stoxx_close': stoxx_close,
@@ -194,8 +197,10 @@ def run_backtest(start_date, end_date, wing_width=50, credit=2.50, verbose=True)
                 'pnl': 0
             })
 
+            vix_str = f"{vix_close:6.2f}" if vix_close is not None else "  N/A "
+            warn_marker = colored("!", "yellow") if vix_warning else " "
             if verbose:
-                print(f"{date_str}  {vstoxx_close:6.2f}  {stoxx_open:8.2f}  {stoxx_entry:8.2f}  {intraday_change:+5.2f}%   "
+                print(f"{date_str}  {vix_str}{warn_marker} {stoxx_open:8.2f}  {stoxx_entry:8.2f}  {intraday_change:+5.2f}%   "
                       f"{colored('NO', 'yellow')}       {reason}")
 
     # Summary
@@ -240,8 +245,9 @@ def run_backtest(start_date, end_date, wing_width=50, credit=2.50, verbose=True)
             print(f"  Profit Factor:       {profit_factor:.2f}")
 
     print()
-    print(colored("  Note: Rule 3 (economic calendar) not applied - historical data unavailable.", "yellow"))
-    print(colored("  Actual results may differ on high-impact news days.", "yellow"))
+    print(colored("  Note: VIX shown as warning only (! marker) - not a blocking rule.", "yellow"))
+    print(colored("  Note: Economic calendar not applied - historical data unavailable.", "yellow"))
+    print(colored("  Actual results may differ on high-impact EUR news days.", "yellow"))
     print()
     print("=" * 70 + "\n")
 

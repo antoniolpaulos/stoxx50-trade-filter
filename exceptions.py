@@ -1,5 +1,5 @@
 """
-Custom exceptions for SPX Trade Filter application.
+Custom exceptions for STOXX50 Trade Filter application.
 Provides specific error types for better error handling and debugging.
 """
 

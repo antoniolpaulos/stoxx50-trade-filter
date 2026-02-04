@@ -13,7 +13,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from exceptions import MarketDataError, CalendarAPIError, TelegramError
 from tests.fixtures.sample_data import (
-    SAMPLE_VIX_DATA, SAMPLE_SPX_DATA, SAMPLE_VIX3M_DATA,
+    SAMPLE_VIX_DATA, SAMPLE_STOXX50_DATA, SAMPLE_VSTOXX_DATA,
     SAMPLE_FOREXFACTORY_RESPONSE, SAMPLE_TRADING_ECONOMICS_RESPONSE
 )
 
@@ -27,39 +27,39 @@ class TestExternalAPIs:
         # Setup mocks
         mock_vix = Mock()
         mock_vix.history.return_value = SAMPLE_VIX_DATA
-        mock_spx = Mock()
-        mock_spx.history.return_value = SAMPLE_SPX_DATA
+        mock_stoxx = Mock()
+        mock_stoxx.history.return_value = SAMPLE_STOXX50_DATA
         
         def mock_ticker_side_effect(symbol):
             if symbol == '^VIX':
                 return mock_vix
-            elif symbol == '^GSPC':
-                return mock_spx
+            elif symbol == '^STOXX50E':
+                return mock_stoxx
         
         mock_ticker.side_effect = mock_ticker_side_effect
         
         # Simulate the market data fetch function
         def get_market_data():
             vix = mock_ticker('^VIX')
-            spx = mock_ticker('^GSPC')
+            stoxx = mock_ticker('^STOXX50E')
             
             vix_data = vix.history(period="5d")
-            spx_data = spx.history(period="1d")
+            stoxx_data = stoxx.history(period="1d")
             
-            if vix_data.empty or spx_data.empty:
+            if vix_data.empty or stoxx_data.empty:
                 raise MarketDataError("Unable to fetch market data")
             
             return {
                 'vix': vix_data['Close'].iloc[-1],
-                'spx_current': spx_data['Close'].iloc[-1],
-                'spx_open': spx_data['Open'].iloc[-1]
+                'stoxx_current': stoxx_data['Close'].iloc[-1],
+                'stoxx_open': stoxx_data['Open'].iloc[-1]
             }
         
         result = get_market_data()
         
         assert result['vix'] == SAMPLE_VIX_DATA['Close'].iloc[-1]
-        assert result['spx_current'] == SAMPLE_SPX_DATA['Close'].iloc[-1]
-        assert result['spx_open'] == SAMPLE_SPX_DATA['Open'].iloc[-1]
+        assert result['stoxx_current'] == SAMPLE_STOXX50_DATA['Close'].iloc[-1]
+        assert result['stoxx_open'] == SAMPLE_STOXX50_DATA['Open'].iloc[-1]
     
     @patch('yfinance.Ticker')
     def test_yfinance_api_failure(self, mock_ticker):
@@ -123,7 +123,8 @@ class TestExternalAPIs:
         assert 'events' in result
         assert len(result['events']) == 1
         assert result['events'][0]['title'] == 'FOMC Statement'
-        mock_get.assert_called_once_with(url, timeout=10)
+        expected_url = "https://nfs.faireconomy.media/ff_calendar_thisweek.json"
+        mock_get.assert_called_once_with(expected_url, timeout=10)
     
     @patch('requests.get')
     def test_forexfactory_api_failure(self, mock_get):
