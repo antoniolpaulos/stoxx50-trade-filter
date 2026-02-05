@@ -207,12 +207,16 @@
             text-transform: uppercase;
         }
         
-        .portfolio-card.always-trade {
+        .portfolio-card {
+            border-color: #444;
+        }
+        
+        .portfolio-card.always-trade:hover {
             border-color: #666;
         }
         
-        .portfolio-card.filtered {
-            border-color: #00ff88;
+        .portfolio-card.filtered:hover {
+            border-color: #00d4ff;
         }
         
         .pnl-large {
@@ -291,6 +295,54 @@
             background: linear-gradient(90deg, #00ff88, #00d4ff);
             border-radius: 4px;
             transition: width 0.3s ease;
+        }
+        
+        /* Trade History Toggle */
+        .toggle-btn {
+            background: #1a4a7a;
+            color: #00d4ff;
+            border: 1px solid #00d4ff;
+            padding: 8px 16px;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 12px;
+            margin-top: 15px;
+            width: 100%;
+            transition: all 0.3s ease;
+        }
+        
+        .toggle-btn:hover {
+            background: #0f3460;
+        }
+        
+        .trade-history-container {
+            max-height: 0;
+            overflow: hidden;
+            transition: max-height 0.3s ease-out;
+            margin-top: 10px;
+        }
+        
+        .trade-history-container.open {
+            max-height: 300px;
+            overflow-y: auto;
+        }
+        
+        .trade-history-container::-webkit-scrollbar {
+            width: 8px;
+        }
+        
+        .trade-history-container::-webkit-scrollbar-track {
+            background: #1a1a1a;
+            border-radius: 4px;
+        }
+        
+        .trade-history-container::-webkit-scrollbar-thumb {
+            background: #333;
+            border-radius: 4px;
+        }
+        
+        .trade-history-container::-webkit-scrollbar-thumb:hover {
+            background: #444;
         }
         
         /* Market Status Styles */
@@ -438,8 +490,11 @@
             <div class="control-grid">
                 <div class="control-section">
                     <h3>Quick Actions</h3>
-                    <button class="btn btn-primary" onclick="runOnce()">Run Filter Now</button>
-                    <button class="btn" onclick="runOnce(true)">Run with Filters</button>
+                    <button class="btn btn-primary" onclick="runOnce()" title="Basic rules: Intraday change + Economic calendar">Run Basic Filter</button>
+                    <button class="btn" onclick="runOnce(true)" title="Additional filters: MA deviation + VIX structure + Prev day range">Run Full Filter</button>
+                    <p style="margin-top: 10px; font-size: 11px; color: #666;">
+                        Basic: Rules 1-2 | Full: All 5 filters
+                    </p>
                 </div>
                 
                 <div class="control-section">
@@ -850,6 +905,12 @@ Result: ${data.result}`);
                             <span class="stats-label">Wins/Losses</span>
                             <span class="stats-value">${alwaysTrade.win_count || 0}/${alwaysTrade.loss_count || 0}</span>
                         </div>
+                        <button class="toggle-btn" id="always-history-btn" onclick="toggleTradeHistory('always-history')">
+                            ▼ Show Daily P&L History
+                        </button>
+                        <div class="trade-history-container" id="always-history">
+                            ${renderTradeHistory(alwaysTrade.history || [])}
+                        </div>
                     </div>
                     
                     <div class="portfolio-card filtered">
@@ -870,6 +931,12 @@ Result: ${data.result}`);
                             <span class="stats-label">Wins/Losses</span>
                             <span class="stats-value">${filtered.win_count || 0}/${filtered.loss_count || 0}</span>
                         </div>
+                        <button class="toggle-btn" id="filtered-history-btn" onclick="toggleTradeHistory('filtered-history')">
+                            ▼ Show Daily P&L History
+                        </button>
+                        <div class="trade-history-container" id="filtered-history">
+                            ${renderTradeHistory(filtered.history || [])}
+                        </div>
                     </div>
                 </div>
                 
@@ -885,6 +952,47 @@ Result: ${data.result}`);
                     </p>
                 </div>
             `;
+        }
+        
+        function renderTradeHistory(history) {
+            if (!history || history.length === 0) {
+                return '<p style="color: #666; font-size: 12px; text-align: center; padding: 10px;">No trades yet</p>';
+            }
+            
+            const rows = history.slice().reverse().map(trade => {
+                const pnlClass = trade.pnl >= 0 ? 'price-up' : 'price-down';
+                const pnlSign = trade.pnl >= 0 ? '+' : '';
+                return `<tr>
+                    <td>${trade.date}</td>
+                    <td>${trade.stoxx_close}</td>
+                    <td class="${pnlClass}">${pnlSign}€${trade.pnl.toFixed(2)}</td>
+                </tr>`;
+            }).join('');
+            
+            return `<table class="trades-table">
+                <thead>
+                    <tr>
+                        <th>Date</th>
+                        <th>STOXX Close</th>
+                        <th>Daily P&L</th>
+                    </tr>
+                </thead>
+                <tbody>${rows}</tbody>
+            </table>`;
+        }
+        
+        function toggleTradeHistory(id) {
+            const container = document.getElementById(id);
+            const btn = document.getElementById(id + '-btn');
+            const isOpen = container.classList.contains('open');
+            
+            if (isOpen) {
+                container.classList.remove('open');
+                btn.textContent = '▼ Show Daily P&L History';
+            } else {
+                container.classList.add('open');
+                btn.textContent = '▲ Hide Daily P&L History';
+            }
         }
         
         function updateConnectionStatus(connected) {
