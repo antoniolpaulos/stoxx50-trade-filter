@@ -26,10 +26,30 @@ strikes:
   wing_width: 50
 ```
 
+## Shadow Portfolio
+
+Two paper trading accounts tracked via `-p` flag:
+- **Always Trade**: Enters every trading day
+- **Filtered**: Only trades on GO signals
+
+```bash
+python trade_filter.py -p              # Run with portfolio tracking
+python trade_filter.py --portfolio-status  # View portfolio
+python trade_filter.py --portfolio-reset   # Reset data
+```
+
+Settlement: Next-day (previous close used to calculate P&L)
+
+Data stored in `portfolio.json` (gitignored)
+
 ## Cron
 
 ```bash
-0 10 * * 1-5 /path/to/stoxx50-trade-filter/venv/bin/python /path/to/stoxx50-trade-filter/trade_filter.py -a
+# Without portfolio
+0 10 * * 1-5 /path/to/venv/bin/python /path/to/trade_filter.py -a
+
+# With portfolio tracking
+0 10 * * 1-5 /path/to/venv/bin/python /path/to/trade_filter.py -a -p
 ```
 
 ## Known Issues
@@ -38,4 +58,4 @@ strikes:
 
 ## Test Status
 
-All 159 tests passing.
+All 189 tests passing.
