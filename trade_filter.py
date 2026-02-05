@@ -6,13 +6,18 @@ Determines if market conditions are favorable for trading Euro Stoxx 50 options.
 
 import argparse
 import sys
+import time
 import yaml
 import yfinance as yf
 import requests
 from datetime import datetime, date, timedelta
 from termcolor import colored
 from pathlib import Path
-from exceptions import MarketDataError
+from exceptions import MarketDataError, PortfolioError, ConfigurationError
+import portfolio as pf
+from logger import TradeFilterLogger, get_logger
+from monitor import start_monitoring_daemon, set_monitor
+from config_validator import validate_config, check_config
 
 # Default config path
 DEFAULT_CONFIG_PATH = Path(__file__).parent / "config.yaml"
@@ -37,6 +42,18 @@ DEFAULT_CONFIG = {
         'enabled': False,
         'bot_token': '',
         'chat_id': ''
+    },
+    'portfolio': {
+        'enabled': False,
+        'file': 'portfolio.json',
+        'credit': 2.50,
+        'include_in_telegram': True
+    },
+    'logging': {
+        'enabled': True,
+        'file': 'logs/trade_filter.log',
+        'level': 'INFO',
+        'log_dir': 'logs'
     }
 }
 
@@ -197,47 +214,58 @@ def check_and_prompt_setup(config):
 
 def get_market_data(include_history=False):
     """Fetch current VIX and Euro Stoxx 50 data."""
-    vix = yf.Ticker("^VIX")
-    stoxx = yf.Ticker("^STOXX50E")
+    logger = get_logger()
+    logger.debug("Fetching market data...")
 
-    vix_data = vix.history(period="5d")
-    stoxx_data = stoxx.history(period="5d" if include_history else "1d")
+    try:
+        vix = yf.Ticker("^VIX")
+        stoxx = yf.Ticker("^STOXX50E")
 
-    if stoxx_data.empty:
-        raise MarketDataError("Unable to fetch market data. Market may be closed.")
+        vix_data = vix.history(period="5d")
+        stoxx_data = stoxx.history(period="5d" if include_history else "1d")
 
-    result = {
-        'stoxx_current': stoxx_data['Close'].iloc[-1],
-        'stoxx_open': stoxx_data['Open'].iloc[-1]
-    }
+        if stoxx_data.empty:
+            error_msg = "Unable to fetch market data. Market may be closed."
+            logger.error(error_msg)
+            raise MarketDataError(error_msg)
 
-    # VIX is optional (warning only)
-    if not vix_data.empty:
-        result['vix'] = vix_data['Close'].iloc[-1]
+        result = {
+            'stoxx_current': stoxx_data['Close'].iloc[-1],
+            'stoxx_open': stoxx_data['Open'].iloc[-1]
+        }
 
-    if include_history and len(stoxx_data) >= 2:
-        # Previous day data for additional filters
-        prev_day = stoxx_data.iloc[-2]
-        result['prev_high'] = prev_day['High']
-        result['prev_low'] = prev_day['Low']
-        result['prev_close'] = prev_day['Close']
-        result['prev_range_pct'] = ((prev_day['High'] - prev_day['Low']) / prev_day['Close']) * 100
+        # VIX is optional (warning only)
+        if not vix_data.empty:
+            result['vix'] = vix_data['Close'].iloc[-1]
 
-        # Calculate 20-day moving average (approximate with available data)
-        if len(stoxx_data) >= 5:
-            result['ma_20_approx'] = stoxx_data['Close'].mean()  # Use available data
+        if include_history and len(stoxx_data) >= 2:
+            # Previous day data for additional filters
+            prev_day = stoxx_data.iloc[-2]
+            result['prev_high'] = prev_day['High']
+            result['prev_low'] = prev_day['Low']
+            result['prev_close'] = prev_day['Close']
+            result['prev_range_pct'] = ((prev_day['High'] - prev_day['Low']) / prev_day['Close']) * 100
 
-        # Get more history for proper MA calculation
-        stoxx_extended = yf.Ticker("^STOXX50E").history(period="1mo")
-        if len(stoxx_extended) >= 20:
-            result['ma_20'] = stoxx_extended['Close'].tail(20).mean()
-        else:
-            result['ma_20'] = stoxx_extended['Close'].mean()
+            # Calculate 20-day moving average (approximate with available data)
+            if len(stoxx_data) >= 5:
+                result['ma_20_approx'] = stoxx_data['Close'].mean()  # Use available data
 
-    # VSTOXX term structure data is limited on yfinance
-    # Skipping term structure check for Euro Stoxx 50
+            # Get more history for proper MA calculation
+            stoxx_extended = yf.Ticker("^STOXX50E").history(period="1mo")
+            if len(stoxx_extended) >= 20:
+                result['ma_20'] = stoxx_extended['Close'].tail(20).mean()
+            else:
+                result['ma_20'] = stoxx_extended['Close'].mean()
 
-    return result
+        # VSTOXX term structure data is limited on yfinance
+        # Skipping term structure check for Euro Stoxx 50
+
+        logger.log_market_data_fetch(True, result)
+        return result
+
+    except Exception as e:
+        logger.log_market_data_fetch(False, error=str(e))
+        raise
 
 
 def calculate_intraday_change(current, open_price):
@@ -409,14 +437,23 @@ def send_telegram_message(config, message):
         print(colored(f"  [WARN] Telegram notification failed: {e}", "yellow"))
 
 
-def evaluate_trade(config, use_additional_filters=False):
-    """Main function to evaluate trade conditions."""
+def evaluate_trade(config, use_additional_filters=False, track_portfolio=False):
+    """Main function to evaluate trade conditions.
+
+    Returns:
+        dict with 'status', 'data', 'call_strike', 'put_strike' if track_portfolio=True
+        None otherwise
+    """
+    logger = get_logger()
+
     print("\n" + "=" * 60)
     print(colored("  STOXX50 0DTE IRON CONDOR TRADE FILTER", "cyan", attrs=["bold"]))
     print(colored(f"  {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}", "cyan"))
     if use_additional_filters:
         print(colored("  [Additional filters enabled]", "yellow"))
     print("=" * 60 + "\n")
+
+    logger.info(f"Starting trade evaluation (additional_filters={use_additional_filters})")
 
     # Load thresholds from config
     vix_warn = config['rules'].get('vix_warn', 22)
@@ -427,6 +464,7 @@ def evaluate_trade(config, use_additional_filters=False):
     try:
         data = get_market_data(include_history=use_additional_filters)
     except Exception as e:
+        logger.error(f"Failed to fetch market data: {e}")
         print(colored(f"[ERROR] {e}", "red", attrs=["bold"]))
         return
 
@@ -597,8 +635,144 @@ def evaluate_trade(config, use_additional_filters=False):
     print("=" * 60)
     print()
 
+    # Log evaluation result
+    logger.log_evaluation(status, {**data, 'intraday_change': intraday_change}, reasons)
+
     # Send Telegram notification
     send_telegram_message(config, "\n".join(notification_lines))
+
+    # Return results for portfolio tracking
+    if track_portfolio:
+        call_strike, put_strike = calculate_strikes(data['stoxx_current'], otm_percent, wing_width)
+        return {
+            'status': status,
+            'data': data,
+            'call_strike': call_strike,
+            'put_strike': put_strike,
+            'intraday_change': intraday_change,
+            'wing_width': wing_width
+        }
+
+
+def show_portfolio_status(config):
+    """Display current portfolio status."""
+    portfolio_config = config.get('portfolio', {})
+    portfolio_file = portfolio_config.get('file', 'portfolio.json')
+    portfolio_path = Path(__file__).parent / portfolio_file
+
+    try:
+        data = pf.load_portfolio(portfolio_path)
+        print(pf.format_portfolio_display(data))
+    except PortfolioError as e:
+        print(colored(f"[ERROR] {e}", "red"))
+
+
+def reset_portfolio_data(config):
+    """Reset portfolio data with confirmation."""
+    portfolio_config = config.get('portfolio', {})
+    portfolio_file = portfolio_config.get('file', 'portfolio.json')
+    portfolio_path = Path(__file__).parent / portfolio_file
+
+    if not portfolio_path.exists():
+        print(colored("No portfolio file exists.", "yellow"))
+        return
+
+    print(colored("\nWARNING: This will reset all portfolio data!", "red", attrs=["bold"]))
+    confirm = input("Type 'RESET' to confirm: ").strip()
+
+    if confirm == 'RESET':
+        data = pf.create_empty_portfolio()
+        pf.save_portfolio(data, portfolio_path)
+        print(colored("Portfolio reset successfully.", "green"))
+    else:
+        print("Reset cancelled.")
+
+
+def run_with_portfolio(config, use_additional_filters=False):
+    """Run trade evaluation with portfolio tracking."""
+    logger = get_logger()
+    logger.info("Running with portfolio tracking enabled")
+
+    portfolio_config = config.get('portfolio', {})
+    portfolio_file = portfolio_config.get('file', 'portfolio.json')
+    portfolio_path = Path(__file__).parent / portfolio_file
+    credit = portfolio_config.get('credit', 2.50)
+
+    # Load portfolio
+    try:
+        portfolio_data = pf.load_portfolio(portfolio_path)
+        logger.info(f"Portfolio loaded from {portfolio_path}")
+    except PortfolioError as e:
+        logger.error(f"Portfolio error: {e}")
+        print(colored(f"[ERROR] Portfolio error: {e}", "red"))
+        return
+
+    # Settle any open trades from previous day
+    prev_close = pf.get_previous_close()
+    settlements = []
+
+    for portfolio_name in ["always_trade", "filtered"]:
+        if pf.has_open_trade(portfolio_name, portfolio_data):
+            if prev_close is not None:
+                pnl = pf.settle_open_trade(portfolio_name, prev_close, portfolio_data, credit=credit)
+                if pnl is not None:
+                    settlements.append((portfolio_name, pnl))
+                    logger.log_trade_settlement(portfolio_name, pnl, prev_close)
+            else:
+                logger.warning(f"Could not fetch previous close to settle {portfolio_name}")
+                print(colored(f"  [WARN] Could not fetch previous close to settle {portfolio_name}", "yellow"))
+
+    if settlements:
+        print(colored("\nSETTLED TRADES:", "white", attrs=["bold", "underline"]))
+        for name, pnl in settlements:
+            pnl_color = "green" if pnl >= 0 else "red"
+            label = "Always Trade" if name == "always_trade" else "Filtered"
+            print(colored(f"  {label}: {pnl:+.0f} EUR", pnl_color))
+        print()
+
+    # Run evaluation
+    result = evaluate_trade(config, use_additional_filters=use_additional_filters, track_portfolio=True)
+
+    if result is None:
+        # Evaluation failed (e.g., market closed)
+        pf.save_portfolio(portfolio_data, portfolio_path)
+        return
+
+    # Record new trades
+    today = date.today().strftime('%Y-%m-%d')
+    trade_info = {
+        "date": today,
+        "stoxx_entry": result['data']['stoxx_current'],
+        "call_strike": result['call_strike'],
+        "put_strike": result['put_strike'],
+        "wing_width": result['wing_width'],
+        "credit": credit
+    }
+
+    # Always record to always_trade portfolio
+    if pf.record_trade_entry("always_trade", trade_info, portfolio_data):
+        logger.log_trade_entry("always_trade", trade_info)
+
+    # Only record to filtered if GO
+    if result['status'] == "GO":
+        if pf.record_trade_entry("filtered", trade_info, portfolio_data):
+            logger.log_trade_entry("filtered", trade_info)
+
+    # Save portfolio
+    pf.save_portfolio(portfolio_data, portfolio_path)
+    logger.info(f"Portfolio saved to {portfolio_path}")
+
+    # Show portfolio status
+    print(pf.format_portfolio_display(portfolio_data))
+
+    # Log portfolio summary
+    summary = pf.get_portfolio_summary(portfolio_data)
+    logger.log_portfolio_summary(summary)
+
+    # Add to Telegram notification if configured
+    if portfolio_config.get('include_in_telegram', True):
+        telegram_summary = pf.format_portfolio_telegram(portfolio_data)
+        send_telegram_message(config, telegram_summary)
 
 
 def main():
@@ -609,6 +783,10 @@ def main():
 Examples:
   python trade_filter.py                    # Basic rules only
   python trade_filter.py -a                 # Include additional filters
+  python trade_filter.py -p                 # Enable portfolio tracking
+  python trade_filter.py -a -p              # All filters + portfolio
+  python trade_filter.py --portfolio-status # View portfolio status
+  python trade_filter.py --portfolio-reset  # Reset portfolio data
   python trade_filter.py -c myconfig.yaml   # Use custom config file
   python trade_filter.py --setup            # Run setup wizard
         """
@@ -616,25 +794,142 @@ Examples:
 
     parser.add_argument('-a', '--additional', action='store_true',
                         help='Enable additional filters (MA deviation, prev day range, VIX structure)')
+    parser.add_argument('-p', '--portfolio', action='store_true',
+                        help='Enable shadow portfolio tracking')
+    parser.add_argument('--portfolio-status', action='store_true',
+                        help='Display portfolio status only (no trade evaluation)')
+    parser.add_argument('--portfolio-reset', action='store_true',
+                        help='Reset portfolio data')
     parser.add_argument('-c', '--config', type=str, default=None,
                         help='Path to config file (default: config.yaml)')
     parser.add_argument('--setup', action='store_true',
                         help='Run the setup wizard for config and Telegram')
+    parser.add_argument('--validate-config', action='store_true',
+                        help='Validate configuration and exit')
+    parser.add_argument('--daemon', action='store_true',
+                        help='Run monitoring daemon (continuous monitoring)')
+    parser.add_argument('--monitor-interval', type=int, default=300,
+                        help='Monitoring check interval in seconds (default: 300)')
+    parser.add_argument('--dashboard', action='store_true',
+                        help='Launch web dashboard for monitoring')
+    parser.add_argument('--dashboard-port', type=int, default=5000,
+                        help='Web dashboard port (default: 5000)')
 
     args = parser.parse_args()
+
+    # Load config first for portfolio commands
+    config = load_config(args.config)
+
+    # Validate configuration (non-strict mode - print warnings but continue)
+    if not args.validate_config:  # Skip validation if only validating
+        is_valid = validate_config(config, strict=False)
+        if not is_valid:
+            print(colored("\n⚠️  Configuration has errors! Fix them or use --validate-config to see details.\n", "yellow"))
+            # Continue anyway in non-strict mode, but user is warned
+
+    # Initialize logging
+    log_config = config.get('logging', {})
+    if log_config.get('enabled', True):
+        logger = get_logger(config)
+        logger.info("=" * 60)
+        logger.info("STOXX50 Trade Filter Started")
+        logger.info("=" * 60)
+
+    # Handle portfolio commands
+    if args.portfolio_status:
+        show_portfolio_status(config)
+        return
+
+    if args.portfolio_reset:
+        reset_portfolio_data(config)
+        return
+
+    # Handle monitoring commands
+    if args.daemon:
+        run_monitoring_daemon_mode(config, args.monitor_interval)
+        return
+
+    if args.dashboard:
+        run_dashboard_mode(config, args.monitor_interval, args.dashboard_port)
+        return
 
     # Run setup wizard if requested
     if args.setup:
         setup_config()
         return
 
-    config = load_config(args.config)
+    # Handle validate config command
+    if args.validate_config:
+        is_valid = validate_config(config, strict=False)
+        sys.exit(0 if is_valid else 1)
 
     # Check if setup is needed (only in interactive mode)
     if sys.stdin.isatty():
         config = check_and_prompt_setup(config)
 
-    evaluate_trade(config, use_additional_filters=args.additional)
+    # Run with or without portfolio tracking
+    if args.portfolio:
+        run_with_portfolio(config, use_additional_filters=args.additional)
+    else:
+        evaluate_trade(config, use_additional_filters=args.additional)
+
+
+def run_monitoring_daemon_mode(config, interval):
+    """Run monitoring daemon mode."""
+    import signal
+    from monitor import TradeMonitor
+
+    logger = get_logger()
+    logger.info(f"Starting monitoring daemon (interval: {interval}s)")
+
+    print(colored("\n" + "=" * 60, "cyan"))
+    print(colored("  MONITORING DAEMON STARTED", "cyan", attrs=["bold"]))
+    print(colored(f"  Check interval: {interval} seconds", "cyan"))
+    print(colored("  Press Ctrl+C to stop", "yellow"))
+    print(colored("=" * 60 + "\n", "cyan"))
+
+    # Create and start monitor
+    monitor = TradeMonitor(config, check_interval=interval)
+
+    # Setup graceful shutdown
+    def signal_handler(signum, frame):
+        print(colored("\n\nShutting down daemon...", "yellow"))
+        monitor.stop()
+        print(colored("Daemon stopped.", "green"))
+        sys.exit(0)
+
+    signal.signal(signal.SIGINT, signal_handler)
+    signal.signal(signal.SIGTERM, signal_handler)
+
+    # Start monitoring
+    monitor.start()
+
+    # Keep main thread alive
+    try:
+        while True:
+            time.sleep(1)
+    except KeyboardInterrupt:
+        signal_handler(None, None)
+
+
+def run_dashboard_mode(config, interval, port):
+    """Run web dashboard mode."""
+    logger = get_logger()
+    logger.info(f"Starting web dashboard on port {port}")
+
+    print(colored("\n" + "=" * 60, "cyan"))
+    print(colored("  WEB DASHBOARD STARTING", "cyan", attrs=["bold"]))
+    print(colored(f"  URL: http://localhost:{port}", "green", attrs=["bold"]))
+    print(colored(f"  Check interval: {interval}s", "cyan"))
+    print(colored("=" * 60 + "\n", "cyan"))
+
+    # Start monitoring in background
+    monitor = start_monitoring_daemon(config, interval, enable_alerts=True)
+    set_monitor(monitor)
+
+    # Run web dashboard
+    from dashboard import run_web_dashboard
+    run_web_dashboard(host='0.0.0.0', port=port, debug=False)
 
 
 if __name__ == "__main__":
