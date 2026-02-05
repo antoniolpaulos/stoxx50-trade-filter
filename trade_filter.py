@@ -13,10 +13,11 @@ import requests
 from datetime import datetime, date, timedelta
 from termcolor import colored
 from pathlib import Path
-from exceptions import MarketDataError, PortfolioError
+from exceptions import MarketDataError, PortfolioError, ConfigurationError
 import portfolio as pf
 from logger import TradeFilterLogger, get_logger
 from monitor import start_monitoring_daemon, set_monitor
+from config_validator import validate_config, check_config
 
 # Default config path
 DEFAULT_CONFIG_PATH = Path(__file__).parent / "config.yaml"
@@ -803,6 +804,8 @@ Examples:
                         help='Path to config file (default: config.yaml)')
     parser.add_argument('--setup', action='store_true',
                         help='Run the setup wizard for config and Telegram')
+    parser.add_argument('--validate-config', action='store_true',
+                        help='Validate configuration and exit')
     parser.add_argument('--daemon', action='store_true',
                         help='Run monitoring daemon (continuous monitoring)')
     parser.add_argument('--monitor-interval', type=int, default=300,
@@ -816,6 +819,13 @@ Examples:
 
     # Load config first for portfolio commands
     config = load_config(args.config)
+
+    # Validate configuration (non-strict mode - print warnings but continue)
+    if not args.validate_config:  # Skip validation if only validating
+        is_valid = validate_config(config, strict=False)
+        if not is_valid:
+            print(colored("\n⚠️  Configuration has errors! Fix them or use --validate-config to see details.\n", "yellow"))
+            # Continue anyway in non-strict mode, but user is warned
 
     # Initialize logging
     log_config = config.get('logging', {})
@@ -847,6 +857,11 @@ Examples:
     if args.setup:
         setup_config()
         return
+
+    # Handle validate config command
+    if args.validate_config:
+        is_valid = validate_config(config, strict=False)
+        sys.exit(0 if is_valid else 1)
 
     # Check if setup is needed (only in interactive mode)
     if sys.stdin.isatty():
