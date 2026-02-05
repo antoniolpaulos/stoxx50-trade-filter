@@ -36,3 +36,8 @@ class ValidationError(TradeFilterError):
 class NetworkError(TradeFilterError):
     """Raised when network connectivity issues occur."""
     pass
+
+
+class PortfolioError(TradeFilterError):
+    """Raised when portfolio operations fail."""
+    pass

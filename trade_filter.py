@@ -12,7 +12,8 @@ import requests
 from datetime import datetime, date, timedelta
 from termcolor import colored
 from pathlib import Path
-from exceptions import MarketDataError
+from exceptions import MarketDataError, PortfolioError
+import portfolio as pf
 
 # Default config path
 DEFAULT_CONFIG_PATH = Path(__file__).parent / "config.yaml"
@@ -37,6 +38,12 @@ DEFAULT_CONFIG = {
         'enabled': False,
         'bot_token': '',
         'chat_id': ''
+    },
+    'portfolio': {
+        'enabled': False,
+        'file': 'portfolio.json',
+        'credit': 2.50,
+        'include_in_telegram': True
     }
 }
 
@@ -409,8 +416,13 @@ def send_telegram_message(config, message):
         print(colored(f"  [WARN] Telegram notification failed: {e}", "yellow"))
 
 
-def evaluate_trade(config, use_additional_filters=False):
-    """Main function to evaluate trade conditions."""
+def evaluate_trade(config, use_additional_filters=False, track_portfolio=False):
+    """Main function to evaluate trade conditions.
+
+    Returns:
+        dict with 'status', 'data', 'call_strike', 'put_strike' if track_portfolio=True
+        None otherwise
+    """
     print("\n" + "=" * 60)
     print(colored("  STOXX50 0DTE IRON CONDOR TRADE FILTER", "cyan", attrs=["bold"]))
     print(colored(f"  {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}", "cyan"))
@@ -600,6 +612,125 @@ def evaluate_trade(config, use_additional_filters=False):
     # Send Telegram notification
     send_telegram_message(config, "\n".join(notification_lines))
 
+    # Return results for portfolio tracking
+    if track_portfolio:
+        call_strike, put_strike = calculate_strikes(data['stoxx_current'], otm_percent, wing_width)
+        return {
+            'status': status,
+            'data': data,
+            'call_strike': call_strike,
+            'put_strike': put_strike,
+            'intraday_change': intraday_change,
+            'wing_width': wing_width
+        }
+
+
+def show_portfolio_status(config):
+    """Display current portfolio status."""
+    portfolio_config = config.get('portfolio', {})
+    portfolio_file = portfolio_config.get('file', 'portfolio.json')
+    portfolio_path = Path(__file__).parent / portfolio_file
+
+    try:
+        data = pf.load_portfolio(portfolio_path)
+        print(pf.format_portfolio_display(data))
+    except PortfolioError as e:
+        print(colored(f"[ERROR] {e}", "red"))
+
+
+def reset_portfolio_data(config):
+    """Reset portfolio data with confirmation."""
+    portfolio_config = config.get('portfolio', {})
+    portfolio_file = portfolio_config.get('file', 'portfolio.json')
+    portfolio_path = Path(__file__).parent / portfolio_file
+
+    if not portfolio_path.exists():
+        print(colored("No portfolio file exists.", "yellow"))
+        return
+
+    print(colored("\nWARNING: This will reset all portfolio data!", "red", attrs=["bold"]))
+    confirm = input("Type 'RESET' to confirm: ").strip()
+
+    if confirm == 'RESET':
+        data = pf.create_empty_portfolio()
+        pf.save_portfolio(data, portfolio_path)
+        print(colored("Portfolio reset successfully.", "green"))
+    else:
+        print("Reset cancelled.")
+
+
+def run_with_portfolio(config, use_additional_filters=False):
+    """Run trade evaluation with portfolio tracking."""
+    portfolio_config = config.get('portfolio', {})
+    portfolio_file = portfolio_config.get('file', 'portfolio.json')
+    portfolio_path = Path(__file__).parent / portfolio_file
+    credit = portfolio_config.get('credit', 2.50)
+
+    # Load portfolio
+    try:
+        portfolio_data = pf.load_portfolio(portfolio_path)
+    except PortfolioError as e:
+        print(colored(f"[ERROR] Portfolio error: {e}", "red"))
+        return
+
+    # Settle any open trades from previous day
+    prev_close = pf.get_previous_close()
+    settlements = []
+
+    for portfolio_name in ["always_trade", "filtered"]:
+        if pf.has_open_trade(portfolio_name, portfolio_data):
+            if prev_close is not None:
+                pnl = pf.settle_open_trade(portfolio_name, prev_close, portfolio_data, credit=credit)
+                if pnl is not None:
+                    settlements.append((portfolio_name, pnl))
+            else:
+                print(colored(f"  [WARN] Could not fetch previous close to settle {portfolio_name}", "yellow"))
+
+    if settlements:
+        print(colored("\nSETTLED TRADES:", "white", attrs=["bold", "underline"]))
+        for name, pnl in settlements:
+            pnl_color = "green" if pnl >= 0 else "red"
+            label = "Always Trade" if name == "always_trade" else "Filtered"
+            print(colored(f"  {label}: {pnl:+.0f} EUR", pnl_color))
+        print()
+
+    # Run evaluation
+    result = evaluate_trade(config, use_additional_filters=use_additional_filters, track_portfolio=True)
+
+    if result is None:
+        # Evaluation failed (e.g., market closed)
+        pf.save_portfolio(portfolio_data, portfolio_path)
+        return
+
+    # Record new trades
+    today = date.today().strftime('%Y-%m-%d')
+    trade_info = {
+        "date": today,
+        "stoxx_entry": result['data']['stoxx_current'],
+        "call_strike": result['call_strike'],
+        "put_strike": result['put_strike'],
+        "wing_width": result['wing_width'],
+        "credit": credit
+    }
+
+    # Always record to always_trade portfolio
+    pf.record_trade_entry("always_trade", trade_info, portfolio_data)
+
+    # Only record to filtered if GO
+    if result['status'] == "GO":
+        pf.record_trade_entry("filtered", trade_info, portfolio_data)
+
+    # Save portfolio
+    pf.save_portfolio(portfolio_data, portfolio_path)
+
+    # Show portfolio status
+    print(pf.format_portfolio_display(portfolio_data))
+
+    # Add to Telegram notification if configured
+    if portfolio_config.get('include_in_telegram', True):
+        telegram_summary = pf.format_portfolio_telegram(portfolio_data)
+        send_telegram_message(config, telegram_summary)
+
 
 def main():
     parser = argparse.ArgumentParser(
@@ -609,6 +740,10 @@ def main():
 Examples:
   python trade_filter.py                    # Basic rules only
   python trade_filter.py -a                 # Include additional filters
+  python trade_filter.py -p                 # Enable portfolio tracking
+  python trade_filter.py -a -p              # All filters + portfolio
+  python trade_filter.py --portfolio-status # View portfolio status
+  python trade_filter.py --portfolio-reset  # Reset portfolio data
   python trade_filter.py -c myconfig.yaml   # Use custom config file
   python trade_filter.py --setup            # Run setup wizard
         """
@@ -616,6 +751,12 @@ Examples:
 
     parser.add_argument('-a', '--additional', action='store_true',
                         help='Enable additional filters (MA deviation, prev day range, VIX structure)')
+    parser.add_argument('-p', '--portfolio', action='store_true',
+                        help='Enable shadow portfolio tracking')
+    parser.add_argument('--portfolio-status', action='store_true',
+                        help='Display portfolio status only (no trade evaluation)')
+    parser.add_argument('--portfolio-reset', action='store_true',
+                        help='Reset portfolio data')
     parser.add_argument('-c', '--config', type=str, default=None,
                         help='Path to config file (default: config.yaml)')
     parser.add_argument('--setup', action='store_true',
@@ -623,18 +764,32 @@ Examples:
 
     args = parser.parse_args()
 
+    # Load config first for portfolio commands
+    config = load_config(args.config)
+
+    # Handle portfolio commands
+    if args.portfolio_status:
+        show_portfolio_status(config)
+        return
+
+    if args.portfolio_reset:
+        reset_portfolio_data(config)
+        return
+
     # Run setup wizard if requested
     if args.setup:
         setup_config()
         return
 
-    config = load_config(args.config)
-
     # Check if setup is needed (only in interactive mode)
     if sys.stdin.isatty():
         config = check_and_prompt_setup(config)
 
-    evaluate_trade(config, use_additional_filters=args.additional)
+    # Run with or without portfolio tracking
+    if args.portfolio:
+        run_with_portfolio(config, use_additional_filters=args.additional)
+    else:
+        evaluate_trade(config, use_additional_filters=args.additional)
 
 
 if __name__ == "__main__":
