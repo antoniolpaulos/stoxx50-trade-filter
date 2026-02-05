@@ -1211,5 +1211,38 @@ def setup_templates():
 app.template_folder = str(setup_templates())
 
 
+def main():
+    """Main entry point for standalone dashboard."""
+    import argparse
+    from termcolor import colored
+    
+    parser = argparse.ArgumentParser(
+        description='STOXX50 Trade Filter - Web Dashboard',
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        epilog="""
+Examples:
+  python dashboard.py                    # Run dashboard on port 5000
+  python dashboard.py --port 8080        # Run on custom port
+  python dashboard.py --host 127.0.0.1   # Bind to localhost only
+        """
+    )
+    
+    parser.add_argument('--port', type=int, default=5000,
+                        help='Port to run dashboard on (default: 5000)')
+    parser.add_argument('--host', type=str, default='0.0.0.0',
+                        help='Host to bind to (default: 0.0.0.0)')
+    parser.add_argument('--debug', action='store_true',
+                        help='Enable debug mode')
+    
+    args = parser.parse_args()
+    
+    print(colored("\n" + "=" * 60, "cyan"))
+    print(colored("  STOXX50 TRADE FILTER - WEB DASHBOARD", "cyan", attrs=["bold"]))
+    print(colored(f"  URL: http://localhost:{args.port}", "green", attrs=["bold"]))
+    print(colored("=" * 60 + "\n", "cyan"))
+    
+    run_web_dashboard(host=args.host, port=args.port, debug=args.debug)
+
+
 if __name__ == '__main__':
-    run_web_dashboard(debug=True)
+    main()
