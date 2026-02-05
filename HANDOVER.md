@@ -3,7 +3,7 @@
 **Last Updated:** 2026-02-05  
 **Current Branch:** `features`  
 **Total Tests:** 236 passing ✅  
-**Status:** Feature-complete with monitoring & validation
+**Status:** Feature-complete with dashboard central control interface
 
 ---
 
@@ -139,18 +139,39 @@ STOXX50 0DTE Iron Condor Trade Filter - Python tool for evaluating market condit
 - **Structured logging** for evaluations, entries, settlements
 - **Tests:** `tests/unit/test_logger.py` (21 tests, all passing)
 
-#### ✅ Real-time Monitoring (Just Implemented)
+#### ✅ Real-time Monitoring
 - **File:** `monitor.py` (430+ lines)
 - **TradeMonitor class** - Continuous background monitoring
-- **State change detection** - GO↔NO-GO transitions, rule changes, price moves
+- **State change detection** - GO↔NO-GO transitions, rule changes, price moves >0.5%
 - **State history** - Keeps last 100 states
-- **AlertManager** - Rate-limited alerts with Telegram integration
-- **Web Dashboard** - Flask-based dashboard at localhost:5000
-  - Real-time state display with auto-refresh
-  - Market data, rules status, statistics
-  - Dark theme, mobile responsive
-- **CLI flags:** `--daemon`, `--dashboard`, `--monitor-interval`
-- **Tests:** `tests/unit/test_monitor.py` (19 tests, all passing)
+- **AlertManager** - Rate-limited alerts (5-min cooldown) with Telegram integration
+
+#### ✅ Web Dashboard (Central Control Interface)
+- **File:** `dashboard.py` (1,280+ lines)
+- **Standalone runner:** `python3 dashboard.py [--port 5000] [--host 0.0.0.0]`
+- **Via trade_filter.py:** `python3 trade_filter.py --dashboard`
+- **Layout (Top to Bottom):**
+  1. **Control Panel** - Run filter once, start/stop daemon
+     - "Run Basic Filter" - Rules 1-2 only (intraday change + calendar)
+     - "Run Full Filter" - All 5 filters (includes MA deviation, VIX structure)
+     - Daemon control with real-time status indicator
+     - Quick trade signal display
+  2. **Shadow Portfolio** - Portfolio comparison at top
+     - Side-by-side cards (Always Trade vs Filtered)
+     - Toggleable Daily P&L History (collapsible, scrollable)
+     - Filter Edge metric prominently displayed
+     - Win rates with visual progress bars
+  3. **Market Status** - Real-time STOXX/VIX data
+  4. **Rules Status** - Pass/Fail/Warn indicators
+  5. **Monitoring Statistics** - Check counts, uptime, errors
+  6. **History** - Last 10 state changes
+- **API Endpoints:**
+  - `/api/status` - Current trade state
+  - `/api/history` - State history
+  - `/api/portfolio` - Portfolio data with Filter Edge
+  - `/api/daemon/status|start|stop` - Daemon control
+  - `/api/run-once` - Execute filter once
+- **Features:** Auto-refresh every 5 seconds, dark theme, mobile responsive
 
 #### ✅ Config Validation (Just Implemented)
 - **File:** `config_validator.py` (430+ lines)
@@ -190,6 +211,18 @@ logger.py (350+ lines)
 ├── Separate handlers for app/trades/errors
 ├── Daily rotation with retention
 └── Specialized logging methods
+
+monitor.py (430+ lines)
+├── TradeMonitor class - Background monitoring daemon
+├── StateChangeDetector - Tracks GO↔NO-GO transitions
+├── AlertManager - Rate-limited Telegram alerts
+└── get_monitor() / set_monitor() - Global singleton access
+
+dashboard.py (1,280+ lines)
+├── Flask web server with embedded HTML template
+├── API endpoints: /api/status, /portfolio, /daemon/*
+├── Control Panel - Run filter once or control daemon
+└── Central dashboard UI with all-in-one view
 
 backtest.py - Historical testing
 ```
@@ -431,8 +464,10 @@ python3 trade_filter.py --daemon
 python3 trade_filter.py --daemon --monitor-interval 60
 
 # Launch web dashboard
-python3 trade_filter.py --dashboard
-python3 trade_filter.py --dashboard --dashboard-port 8080
+python3 dashboard.py                                    # Standalone (recommended)
+python3 trade_filter.py --dashboard                       # Via trade_filter.py
+python3 dashboard.py --port 8080                          # Custom port
+python3 dashboard.py --host 127.0.0.1                     # Localhost only
 
 # Setup wizard
 python3 trade_filter.py --setup
@@ -445,22 +480,24 @@ python3 backtest.py --start 2024-01-01 --end 2024-12-31
 
 ## Context for Next Session
 
-**Current State:** Features branch is feature-complete with monitoring and validation implemented.
+**Current State:** Dashboard is now the central control interface with:
+- Standalone runner: `python3 dashboard.py`
+- Control panel (run filter once or control daemon)
+- Portfolio visualization at top with toggleable history
+- All features integrated and tested
 
-**Completed This Session:**
-1. ✅ Real-time monitoring system with web dashboard
-2. ✅ Config validation with comprehensive checks
-3. ✅ All tests passing (236/236 core tests)
+**Completed Today:**
+1. ✅ Dashboard UI improvements based on user feedback
+   - Renamed buttons: "Run Basic Filter" / "Run Full Filter" with tooltips
+   - Removed green border from filtered card (neutral styling)
+   - Added collapsible Daily P&L History toggle
+2. ✅ Removed redundant templates directory (HTML embedded in dashboard.py)
+3. ✅ Updated all documentation
 
 **Next Priorities:**
 1. Position sizing calculator - Risk management feature
 2. Enhanced paper trading analytics
 3. Additional data sources
-
-**Session Files:**
-- `session-ses_3d5b.md` - Initial codebase exploration (2026-02-04)
-- `session-ses_summary.md` - Test suite overhaul summary (2026-02-04)
-- `HANDOVER.md` - This file, combines all session information
 
 ---
 
