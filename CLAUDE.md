@@ -59,3 +59,16 @@ Data stored in `portfolio.json` (gitignored)
 ## Test Status
 
 All 189 tests passing.
+
+## Current State
+
+- Branch: `features` (pushed to origin)
+- Shadow portfolio feature complete and tested
+- Ready to merge to main when ready
+
+## Next Steps (Ideas)
+
+- Test portfolio tracking over a few trading days
+- Add CSV export for portfolio history (`--portfolio-export`)
+- Add configurable history limit (trim old trades)
+- Consider adding average win/loss stats to display
