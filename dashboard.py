@@ -653,6 +653,139 @@ DASHBOARD_HTML = '''
             background: #444;
         }
         
+        /* Position Sizing Styles */
+        .position-sizing {
+            background: linear-gradient(135deg, #1a1a2e 0%, #0f3460 100%);
+            border: 2px solid #00d4ff;
+        }
+        
+        .position-inputs {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+            gap: 15px;
+            margin-bottom: 20px;
+        }
+        
+        .input-group {
+            display: flex;
+            flex-direction: column;
+        }
+        
+        .input-group label {
+            font-size: 11px;
+            color: #888;
+            text-transform: uppercase;
+            margin-bottom: 5px;
+        }
+        
+        .input-group input {
+            background: #1a1a1a;
+            border: 1px solid #333;
+            color: #e0e0e0;
+            padding: 10px;
+            border-radius: 4px;
+            font-size: 14px;
+        }
+        
+        .input-group input:focus {
+            outline: none;
+            border-color: #00d4ff;
+        }
+        
+        .calc-btn {
+            background: #00d4ff;
+            color: #000;
+            border: none;
+            padding: 12px 24px;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 14px;
+            font-weight: bold;
+            margin-right: 10px;
+            transition: all 0.3s ease;
+        }
+        
+        .calc-btn:hover {
+            background: #33ddff;
+            transform: translateY(-1px);
+        }
+        
+        .kelly-btn {
+            background: transparent;
+            color: #00d4ff;
+            border: 1px solid #00d4ff;
+        }
+        
+        .kelly-btn:hover {
+            background: rgba(0, 212, 255, 0.1);
+        }
+        
+        .kelly-btn.active {
+            background: #00d4ff;
+            color: #000;
+        }
+        
+        .position-results {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+            gap: 15px;
+            margin-top: 20px;
+        }
+        
+        .position-result-card {
+            background: rgba(0, 0, 0, 0.3);
+            padding: 15px;
+            border-radius: 6px;
+            border: 1px solid #333;
+            text-align: center;
+        }
+        
+        .position-result-card.highlight {
+            border-color: #00ff88;
+            background: rgba(0, 255, 136, 0.1);
+        }
+        
+        .position-result-card.warning {
+            border-color: #ffa502;
+            background: rgba(255, 165, 2, 0.1);
+        }
+        
+        .position-result-value {
+            font-size: 28px;
+            font-weight: bold;
+            color: #00d4ff;
+            margin: 5px 0;
+        }
+        
+        .position-result-value.green {
+            color: #00ff88;
+        }
+        
+        .position-result-value.red {
+            color: #ff4757;
+        }
+        
+        .position-result-label {
+            font-size: 11px;
+            color: #888;
+            text-transform: uppercase;
+        }
+        
+        .kelly-bar {
+            height: 6px;
+            background: #333;
+            border-radius: 3px;
+            margin-top: 10px;
+            overflow: hidden;
+        }
+        
+        .kelly-bar-fill {
+            height: 100%;
+            background: linear-gradient(90deg, #ff4757, #ffa502, #00ff88);
+            border-radius: 3px;
+            transition: width 0.3s ease;
+        }
+        
         /* Market Status Styles */
         .metrics-grid {
             display: grid;
@@ -830,6 +963,39 @@ DASHBOARD_HTML = '''
             </h2>
             <div id="portfolio-content">
                 <p class="loading">Loading portfolio data...</p>
+            </div>
+        </div>
+        
+        <!-- POSITION SIZING -->
+        <div class="card position-sizing">
+            <h2>
+                <span>Position Sizing Calculator</span>
+                <button class="refresh-btn" onclick="calculatePositionSize()">Calculate</button>
+            </h2>
+            <div class="position-inputs">
+                <div class="input-group">
+                    <label>Account Balance (€)</label>
+                    <input type="number" id="ps-balance" value="10000" min="1000" step="1000">
+                </div>
+                <div class="input-group">
+                    <label>Credit Received (€)</label>
+                    <input type="number" id="ps-credit" value="2.50" min="0.50" max="10.00" step="0.10">
+                </div>
+                <div class="input-group">
+                    <label>Wing Width (pts)</label>
+                    <input type="number" id="ps-wing" value="50" min="10" max="100" step="10">
+                </div>
+                <div class="input-group">
+                    <label>Risk % per Trade</label>
+                    <input type="number" id="ps-risk" value="1.0" min="0.1" max="5.0" step="0.1">
+                </div>
+            </div>
+            <div class="input-group" style="margin-bottom: 20px;">
+                <button class="calc-btn" onclick="calculatePositionSize()">Calculate Size</button>
+                <button class="calc-btn kelly-btn" id="btn-kelly" onclick="toggleKelly()">Use Kelly Criterion</button>
+            </div>
+            <div id="position-results">
+                <p class="loading">Enter parameters and click Calculate</p>
             </div>
         </div>
         
@@ -1174,6 +1340,10 @@ DASHBOARD_HTML = '''
         }
         
         function updatePortfolio(data) {
+            // Save toggle states before re-rendering
+            const alwaysOpen = document.getElementById('always-history')?.classList.contains('open');
+            const filteredOpen = document.getElementById('filtered-history')?.classList.contains('open');
+            
             const content = document.getElementById('portfolio-content');
             
             if (data.error) {
@@ -1191,6 +1361,11 @@ DASHBOARD_HTML = '''
             const alwaysClass = alwaysPnl >= 0 ? 'price-up' : 'price-down';
             const filteredClass = filteredPnl >= 0 ? 'price-up' : 'price-down';
             const edgeClass = filterEdge >= 0 ? 'price-up' : 'price-down';
+            
+            const alwaysBtnText = alwaysOpen ? '▲ Hide Daily P&L History' : '▼ Show Daily P&L History';
+            const filteredBtnText = filteredOpen ? '▲ Hide Daily P&L History' : '▼ Show Daily P&L History';
+            const alwaysContainerClass = alwaysOpen ? 'trade-history-container open' : 'trade-history-container';
+            const filteredContainerClass = filteredOpen ? 'trade-history-container open' : 'trade-history-container';
             
             content.innerHTML = `
                 <div class="portfolio-grid">
@@ -1213,9 +1388,9 @@ DASHBOARD_HTML = '''
                             <span class="stats-value">${alwaysTrade.win_count || 0}/${alwaysTrade.loss_count || 0}</span>
                         </div>
                         <button class="toggle-btn" id="always-history-btn" onclick="toggleTradeHistory('always-history')">
-                            ▼ Show Daily P&L History
+                            ${alwaysBtnText}
                         </button>
-                        <div class="trade-history-container" id="always-history">
+                        <div class="${alwaysContainerClass}" id="always-history">
                             ${renderTradeHistory(alwaysTrade.history || [])}
                         </div>
                     </div>
@@ -1239,9 +1414,9 @@ DASHBOARD_HTML = '''
                             <span class="stats-value">${filtered.win_count || 0}/${filtered.loss_count || 0}</span>
                         </div>
                         <button class="toggle-btn" id="filtered-history-btn" onclick="toggleTradeHistory('filtered-history')">
-                            ▼ Show Daily P&L History
+                            ${filteredBtnText}
                         </button>
-                        <div class="trade-history-container" id="filtered-history">
+                        <div class="${filteredContainerClass}" id="filtered-history">
                             ${renderTradeHistory(filtered.history || [])}
                         </div>
                     </div>
@@ -1333,6 +1508,98 @@ DASHBOARD_HTML = '''
         
         function refreshPortfolio() {
             fetchPortfolio();
+        }
+        
+        let useKelly = false;
+        
+        function toggleKelly() {
+            useKelly = !useKelly;
+            const btn = document.getElementById('btn-kelly');
+            if (useKelly) {
+                btn.classList.add('active');
+                btn.textContent = 'Kelly Active';
+            } else {
+                btn.classList.remove('active');
+                btn.textContent = 'Use Kelly Criterion';
+            }
+        }
+        
+        async function calculatePositionSize() {
+            const balance = document.getElementById('ps-balance').value;
+            const credit = document.getElementById('ps-credit').value;
+            const wing = document.getElementById('ps-wing').value;
+            const risk = document.getElementById('ps-risk').value;
+            
+            try {
+                const params = new URLSearchParams({
+                    balance: balance,
+                    credit: credit,
+                    wing_width: wing,
+                    risk_percent: risk,
+                    kelly: useKelly
+                });
+                
+                const response = await fetch(`/api/position-size?${params}`);
+                const data = await response.json();
+                
+                if (data.success) {
+                    updatePositionResults(data.position);
+                } else {
+                    document.getElementById('position-results').innerHTML = 
+                        `<p class="error-message">Error: ${data.error}</p>`;
+                }
+            } catch (error) {
+                console.error('Error calculating position size:', error);
+                document.getElementById('position-results').innerHTML = 
+                    `<p class="error-message">Failed to calculate position size</p>`;
+            }
+        }
+        
+        function updatePositionResults(position) {
+            const resultsDiv = document.getElementById('position-results');
+            
+            const riskClass = position.total_max_loss <= 500 ? 'green' : '';
+            const rrClass = position.risk_reward_ratio >= 10 ? 'green' : 
+                           position.risk_reward_ratio >= 5 ? '' : 'red';
+            
+            resultsDiv.innerHTML = `
+                <div class="position-result-card highlight">
+                    <div class="position-result-label">Suggested Size</div>
+                    <div class="position-result-value">${position.spreads} spreads</div>
+                    <div class="position-result-label">${position.spreads * 2} contracts</div>
+                </div>
+                <div class="position-result-card ${riskClass}">
+                    <div class="position-result-label">Max Loss</div>
+                    <div class="position-result-value">€${position.total_max_loss.toFixed(2)}</div>
+                    <div class="position-result-label">€${position.max_loss_per_spread.toFixed(2)} per spread</div>
+                </div>
+                <div class="position-result-card">
+                    <div class="position-result-label">Total Credit</div>
+                    <div class="position-result-value green">€${position.total_credit.toFixed(2)}</div>
+                    <div class="position-result-label">Received upfront</div>
+                </div>
+                <div class="position-result-card ${rrClass}">
+                    <div class="position-result-label">Risk/Reward</div>
+                    <div class="position-result-value">1:${position.risk_reward_ratio.toFixed(1)}</div>
+                    <div class="position-result-label">Max loss : Credit</div>
+                </div>
+                ${position.kelly_percent ? `
+                <div class="position-result-card">
+                    <div class="position-result-label">Kelly Criterion</div>
+                    <div class="position-result-value">${position.kelly_percent.toFixed(1)}%</div>
+                    <div class="kelly-bar">
+                        <div class="kelly-bar-fill" style="width: ${Math.min(position.kelly_percent, 100)}%"></div>
+                    </div>
+                    <div class="position-result-label">Quarter Kelly: ${(position.kelly_percent / 4).toFixed(1)}%</div>
+                </div>
+                ` : `
+                <div class="position-result-card">
+                    <div class="position-result-label">Risk Amount</div>
+                    <div class="position-result-value">€${position.risk_amount.toFixed(2)}</div>
+                    <div class="position-result-label">${((position.risk_amount / position.account_balance) * 100).toFixed(1)}% of account</div>
+                </div>
+                `}
+            `;
         }
         
         // AUTO REFRESH
