@@ -60,15 +60,20 @@ Data stored in `portfolio.json` (gitignored)
 
 All 189 tests passing.
 
+## New Modules (added by opencode)
+
+| Module | Purpose |
+|--------|---------|
+| `logger.py` | Comprehensive logging system |
+| `monitor.py` | Real-time monitoring |
+| `dashboard.py` | Web dashboard |
+| `config_validator.py` | Config validation |
+| `templates/dashboard.html` | Dashboard UI |
+
+See `HANDOVER.md` for detailed documentation.
+
 ## Current State
 
-- Branch: `features` (pushed to origin)
-- Shadow portfolio feature complete and tested
-- Ready to merge to main when ready
-
-## Next Steps (Ideas)
-
-- Test portfolio tracking over a few trading days
-- Add CSV export for portfolio history (`--portfolio-export`)
-- Add configurable history limit (trim old trades)
-- Consider adding average win/loss stats to display
+- Branch: `features` (needs push)
+- All new features committed but not yet pushed
+- Ready for testing/review
