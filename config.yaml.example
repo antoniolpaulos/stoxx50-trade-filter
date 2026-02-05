@@ -55,3 +55,10 @@ portfolio:
 logging:
   file: "trade_filter.log"
   level: "INFO"                  # DEBUG, INFO, WARNING, ERROR
+
+# Data source configuration
+data_sources:
+  # Primary: Yahoo Finance (always available)
+  # Backup: Alpha Vantage (free tier: 25 requests/day)
+  # Get free API key at https://www.alphavantage.co/support/#api-key
+  alpha_vantage_api_key: ""       # Optional: for backup data source
