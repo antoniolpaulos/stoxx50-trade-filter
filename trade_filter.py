@@ -14,6 +14,7 @@ from termcolor import colored
 from pathlib import Path
 from exceptions import MarketDataError, PortfolioError
 import portfolio as pf
+from logger import TradeFilterLogger, get_logger
 
 # Default config path
 DEFAULT_CONFIG_PATH = Path(__file__).parent / "config.yaml"
@@ -44,6 +45,12 @@ DEFAULT_CONFIG = {
         'file': 'portfolio.json',
         'credit': 2.50,
         'include_in_telegram': True
+    },
+    'logging': {
+        'enabled': True,
+        'file': 'logs/trade_filter.log',
+        'level': 'INFO',
+        'log_dir': 'logs'
     }
 }
 
@@ -204,47 +211,58 @@ def check_and_prompt_setup(config):
 
 def get_market_data(include_history=False):
     """Fetch current VIX and Euro Stoxx 50 data."""
-    vix = yf.Ticker("^VIX")
-    stoxx = yf.Ticker("^STOXX50E")
+    logger = get_logger()
+    logger.debug("Fetching market data...")
 
-    vix_data = vix.history(period="5d")
-    stoxx_data = stoxx.history(period="5d" if include_history else "1d")
+    try:
+        vix = yf.Ticker("^VIX")
+        stoxx = yf.Ticker("^STOXX50E")
 
-    if stoxx_data.empty:
-        raise MarketDataError("Unable to fetch market data. Market may be closed.")
+        vix_data = vix.history(period="5d")
+        stoxx_data = stoxx.history(period="5d" if include_history else "1d")
 
-    result = {
-        'stoxx_current': stoxx_data['Close'].iloc[-1],
-        'stoxx_open': stoxx_data['Open'].iloc[-1]
-    }
+        if stoxx_data.empty:
+            error_msg = "Unable to fetch market data. Market may be closed."
+            logger.error(error_msg)
+            raise MarketDataError(error_msg)
 
-    # VIX is optional (warning only)
-    if not vix_data.empty:
-        result['vix'] = vix_data['Close'].iloc[-1]
+        result = {
+            'stoxx_current': stoxx_data['Close'].iloc[-1],
+            'stoxx_open': stoxx_data['Open'].iloc[-1]
+        }
 
-    if include_history and len(stoxx_data) >= 2:
-        # Previous day data for additional filters
-        prev_day = stoxx_data.iloc[-2]
-        result['prev_high'] = prev_day['High']
-        result['prev_low'] = prev_day['Low']
-        result['prev_close'] = prev_day['Close']
-        result['prev_range_pct'] = ((prev_day['High'] - prev_day['Low']) / prev_day['Close']) * 100
+        # VIX is optional (warning only)
+        if not vix_data.empty:
+            result['vix'] = vix_data['Close'].iloc[-1]
 
-        # Calculate 20-day moving average (approximate with available data)
-        if len(stoxx_data) >= 5:
-            result['ma_20_approx'] = stoxx_data['Close'].mean()  # Use available data
+        if include_history and len(stoxx_data) >= 2:
+            # Previous day data for additional filters
+            prev_day = stoxx_data.iloc[-2]
+            result['prev_high'] = prev_day['High']
+            result['prev_low'] = prev_day['Low']
+            result['prev_close'] = prev_day['Close']
+            result['prev_range_pct'] = ((prev_day['High'] - prev_day['Low']) / prev_day['Close']) * 100
 
-        # Get more history for proper MA calculation
-        stoxx_extended = yf.Ticker("^STOXX50E").history(period="1mo")
-        if len(stoxx_extended) >= 20:
-            result['ma_20'] = stoxx_extended['Close'].tail(20).mean()
-        else:
-            result['ma_20'] = stoxx_extended['Close'].mean()
+            # Calculate 20-day moving average (approximate with available data)
+            if len(stoxx_data) >= 5:
+                result['ma_20_approx'] = stoxx_data['Close'].mean()  # Use available data
 
-    # VSTOXX term structure data is limited on yfinance
-    # Skipping term structure check for Euro Stoxx 50
+            # Get more history for proper MA calculation
+            stoxx_extended = yf.Ticker("^STOXX50E").history(period="1mo")
+            if len(stoxx_extended) >= 20:
+                result['ma_20'] = stoxx_extended['Close'].tail(20).mean()
+            else:
+                result['ma_20'] = stoxx_extended['Close'].mean()
 
-    return result
+        # VSTOXX term structure data is limited on yfinance
+        # Skipping term structure check for Euro Stoxx 50
+
+        logger.log_market_data_fetch(True, result)
+        return result
+
+    except Exception as e:
+        logger.log_market_data_fetch(False, error=str(e))
+        raise
 
 
 def calculate_intraday_change(current, open_price):
@@ -423,12 +441,16 @@ def evaluate_trade(config, use_additional_filters=False, track_portfolio=False):
         dict with 'status', 'data', 'call_strike', 'put_strike' if track_portfolio=True
         None otherwise
     """
+    logger = get_logger()
+
     print("\n" + "=" * 60)
     print(colored("  STOXX50 0DTE IRON CONDOR TRADE FILTER", "cyan", attrs=["bold"]))
     print(colored(f"  {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}", "cyan"))
     if use_additional_filters:
         print(colored("  [Additional filters enabled]", "yellow"))
     print("=" * 60 + "\n")
+
+    logger.info(f"Starting trade evaluation (additional_filters={use_additional_filters})")
 
     # Load thresholds from config
     vix_warn = config['rules'].get('vix_warn', 22)
@@ -439,6 +461,7 @@ def evaluate_trade(config, use_additional_filters=False, track_portfolio=False):
     try:
         data = get_market_data(include_history=use_additional_filters)
     except Exception as e:
+        logger.error(f"Failed to fetch market data: {e}")
         print(colored(f"[ERROR] {e}", "red", attrs=["bold"]))
         return
 
@@ -609,6 +632,9 @@ def evaluate_trade(config, use_additional_filters=False, track_portfolio=False):
     print("=" * 60)
     print()
 
+    # Log evaluation result
+    logger.log_evaluation(status, {**data, 'intraday_change': intraday_change}, reasons)
+
     # Send Telegram notification
     send_telegram_message(config, "\n".join(notification_lines))
 
@@ -661,6 +687,9 @@ def reset_portfolio_data(config):
 
 def run_with_portfolio(config, use_additional_filters=False):
     """Run trade evaluation with portfolio tracking."""
+    logger = get_logger()
+    logger.info("Running with portfolio tracking enabled")
+
     portfolio_config = config.get('portfolio', {})
     portfolio_file = portfolio_config.get('file', 'portfolio.json')
     portfolio_path = Path(__file__).parent / portfolio_file
@@ -669,7 +698,9 @@ def run_with_portfolio(config, use_additional_filters=False):
     # Load portfolio
     try:
         portfolio_data = pf.load_portfolio(portfolio_path)
+        logger.info(f"Portfolio loaded from {portfolio_path}")
     except PortfolioError as e:
+        logger.error(f"Portfolio error: {e}")
         print(colored(f"[ERROR] Portfolio error: {e}", "red"))
         return
 
@@ -683,7 +714,9 @@ def run_with_portfolio(config, use_additional_filters=False):
                 pnl = pf.settle_open_trade(portfolio_name, prev_close, portfolio_data, credit=credit)
                 if pnl is not None:
                     settlements.append((portfolio_name, pnl))
+                    logger.log_trade_settlement(portfolio_name, pnl, prev_close)
             else:
+                logger.warning(f"Could not fetch previous close to settle {portfolio_name}")
                 print(colored(f"  [WARN] Could not fetch previous close to settle {portfolio_name}", "yellow"))
 
     if settlements:
@@ -714,17 +747,24 @@ def run_with_portfolio(config, use_additional_filters=False):
     }
 
     # Always record to always_trade portfolio
-    pf.record_trade_entry("always_trade", trade_info, portfolio_data)
+    if pf.record_trade_entry("always_trade", trade_info, portfolio_data):
+        logger.log_trade_entry("always_trade", trade_info)
 
     # Only record to filtered if GO
     if result['status'] == "GO":
-        pf.record_trade_entry("filtered", trade_info, portfolio_data)
+        if pf.record_trade_entry("filtered", trade_info, portfolio_data):
+            logger.log_trade_entry("filtered", trade_info)
 
     # Save portfolio
     pf.save_portfolio(portfolio_data, portfolio_path)
+    logger.info(f"Portfolio saved to {portfolio_path}")
 
     # Show portfolio status
     print(pf.format_portfolio_display(portfolio_data))
+
+    # Log portfolio summary
+    summary = pf.get_portfolio_summary(portfolio_data)
+    logger.log_portfolio_summary(summary)
 
     # Add to Telegram notification if configured
     if portfolio_config.get('include_in_telegram', True):
@@ -766,6 +806,14 @@ Examples:
 
     # Load config first for portfolio commands
     config = load_config(args.config)
+
+    # Initialize logging
+    log_config = config.get('logging', {})
+    if log_config.get('enabled', True):
+        logger = get_logger(config)
+        logger.info("=" * 60)
+        logger.info("STOXX50 Trade Filter Started")
+        logger.info("=" * 60)
 
     # Handle portfolio commands
     if args.portfolio_status:
