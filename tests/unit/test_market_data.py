@@ -76,13 +76,14 @@ class TestGetMarketData:
         mock_stoxx_ticker = Mock()
         mock_stoxx_ticker.history.return_value = sample_stoxx50_data
         mock_ticker.return_value = mock_stoxx_ticker
-        
+
         result = get_market_data(include_history=True)
-        
+
         assert 'stoxx_current' in result
         assert 'stoxx_open' in result
-        # Should have called with 5d period for history
-        mock_stoxx_ticker.history.assert_called_with(period='5d')
+        # Function calls history() multiple times with different periods
+        # First call uses 5d, later call for extended MA uses 1mo
+        mock_stoxx_ticker.history.assert_any_call(period='5d')
     
     @patch('trade_filter.yf.Ticker')
     def test_missing_columns_in_data(self, mock_ticker):

@@ -195,11 +195,11 @@ TEST_SCENARIOS = {
     }
 }
 
-# Market holidays for testing (European holidays)
+# Market holidays for testing (European holidays - weekdays only)
 MARKET_HOLIDAYS = [
-    date(2026, 1, 1),   # New Year's Day
-    date(2026, 12, 25), # Christmas Day
-    date(2026, 12, 26), # St. Stephen's Day (some EU countries)
+    date(2026, 1, 1),   # New Year's Day (Thursday)
+    date(2026, 4, 3),   # Good Friday
+    date(2026, 12, 25), # Christmas Day (Friday)
 ]
 
 # Invalid data samples for error testing

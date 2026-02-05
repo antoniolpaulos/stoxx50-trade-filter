@@ -143,13 +143,13 @@ class TestExternalAPIs:
         with pytest.raises(CalendarAPIError, match="ForexFactory API failed"):
             fetch_forexfactory()
     
-    @patch('requests.get')
-    def test_telegram_api_success(self, mock_get):
+    @patch('requests.post')
+    def test_telegram_api_success(self, mock_post):
         """Test successful Telegram API call."""
         mock_response = Mock()
         mock_response.raise_for_status.return_value = None
-        mock_get.return_value = mock_response
-        
+        mock_post.return_value = mock_response
+
         def send_telegram_message(bot_token, chat_id, message):
             try:
                 url = f"https://api.telegram.org/bot{bot_token}/sendMessage"
@@ -163,23 +163,23 @@ class TestExternalAPIs:
                 return True
             except requests.RequestException as e:
                 raise TelegramError(f"Telegram API request failed: {e}")
-        
+
         result = send_telegram_message("test_token", "test_chat", "Test message")
-        
+
         assert result is True
-        mock_get.assert_called_once()
-        
+        mock_post.assert_called_once()
+
         # Verify the call parameters
-        call_args = mock_get.call_args
+        call_args = mock_post.call_args
         assert 'api.telegram.org' in call_args[0][0]
         assert call_args[1]['json']['chat_id'] == 'test_chat'
         assert call_args[1]['json']['text'] == 'Test message'
     
-    @patch('requests.get')
-    def test_telegram_api_failure(self, mock_get):
+    @patch('requests.post')
+    def test_telegram_api_failure(self, mock_post):
         """Test Telegram API failure handling."""
-        mock_get.side_effect = requests.exceptions.RequestException("Invalid token")
-        
+        mock_post.side_effect = requests.exceptions.RequestException("Invalid token")
+
         def send_telegram_message(bot_token, chat_id, message):
             try:
                 url = f"https://api.telegram.org/bot{bot_token}/sendMessage"
@@ -193,7 +193,7 @@ class TestExternalAPIs:
                 return True
             except requests.RequestException as e:
                 raise TelegramError(f"Telegram API request failed: {e}")
-        
+
         with pytest.raises(TelegramError, match="Telegram API request failed"):
             send_telegram_message("invalid_token", "test_chat", "Test message")
     
@@ -236,15 +236,18 @@ class TestExternalAPIs:
         """Test timeout handling for all APIs."""
         with patch('requests.get') as mock_get:
             mock_get.side_effect = requests.exceptions.Timeout("Request timed out")
-            
+
             # Test ForexFactory timeout
             with pytest.raises(CalendarAPIError, match="ForexFactory API failed"):
                 try:
                     requests.get("https://nfs.faireconomy.media/ff_calendar_thisweek.json", timeout=10)
                 except requests.Timeout as e:
                     raise CalendarAPIError(f"ForexFactory API failed: {e}")
-            
-            # Test Telegram timeout
+
+        # Test Telegram timeout separately with requests.post patched
+        with patch('requests.post') as mock_post:
+            mock_post.side_effect = requests.exceptions.Timeout("Request timed out")
+
             with pytest.raises(TelegramError, match="Telegram API request failed"):
                 try:
                     requests.post("https://api.telegram.org/bot/token/sendMessage", json={}, timeout=10)
@@ -258,10 +261,11 @@ class TestExternalAPIs:
             mock_response.status_code = 429
             mock_response.raise_for_status.side_effect = requests.exceptions.HTTPError("429 Too Many Requests")
             mock_get.return_value = mock_response
-            
-            # Test rate limit response
+
+            # Test rate limit response - must call raise_for_status to trigger the error
             with pytest.raises(requests.exceptions.HTTPError):
-                requests.get("https://api.example.com", timeout=10)
+                response = requests.get("https://api.example.com", timeout=10)
+                response.raise_for_status()
     
     def test_api_response_parsing_errors(self):
         """Test handling of malformed API responses."""

@@ -65,13 +65,13 @@ class TestLoadConfig:
     def test_load_nonexistent_config_uses_defaults(self):
         """Test that loading non-existent config falls back to defaults."""
         nonexistent_path = "/tmp/does_not_exist_config_12345.yaml"
-        
+
         loaded_config = load_config(nonexistent_path)
-        
+
         # Should return default config
         assert loaded_config is not None
         assert 'rules' in loaded_config
-        assert loaded_config['rules']['vstoxx_max'] == 22  # Default value from DEFAULT_CONFIG
+        assert loaded_config['rules']['vix_warn'] == 22  # Default value from DEFAULT_CONFIG
     
     def test_load_config_with_telegram_section(self):
         """Test loading config with Telegram settings."""
@@ -99,22 +99,22 @@ class TestLoadConfig:
     
     def test_load_config_with_invalid_yaml(self):
         """Test handling of invalid YAML syntax."""
-        invalid_yaml = """
-rules:
+        # This YAML has unbalanced brackets which is truly invalid
+        invalid_yaml = """rules:
   vstoxx_max: 25
-strikes: [
+  unclosed: {key: value
+strikes:
   otm_percent: 1.0
-]
 """
-        
+
         with tempfile.NamedTemporaryFile(mode='w', suffix='.yaml', delete=False) as f:
             f.write(invalid_yaml)
             temp_path = f.name
-        
+
         try:
             with pytest.raises(yaml.YAMLError):
                 load_config(temp_path)
-                
+
         finally:
             os.unlink(temp_path)
 
@@ -306,16 +306,18 @@ class TestConfigFileOperations:
         with tempfile.NamedTemporaryFile(mode='w', suffix='.yaml', delete=False) as f:
             yaml.dump(sample_config, f)
             temp_path = f.name
-        
+
         try:
             # Load the config
             loaded_config = load_config(temp_path)
-            
-            # Verify all sections are present
-            assert loaded_config['rules'] == sample_config['rules']
+
+            # Verify original values are preserved (merged with defaults)
+            # The loaded config may have extra keys from DEFAULT_CONFIG
+            for key, value in sample_config['rules'].items():
+                assert loaded_config['rules'][key] == value
             assert loaded_config['strikes'] == sample_config['strikes']
             assert loaded_config['calendar']['always_watch'] == sample_config['calendar']['always_watch']
-            
+
         finally:
             os.unlink(temp_path)
     

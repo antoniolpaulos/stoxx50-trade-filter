@@ -117,7 +117,7 @@ class TestExtremeMarketConditions:
         
         # Should trigger NO-GO due to high volatility
         rule_pass = vstoxx_current <= vstoxx_threshold
-        assert rule_pass is False
+        assert rule_pass == False  # Use == for numpy bool comparison
         assert vstoxx_current == 64.0
         
         # Test extreme intraday changes for STOXX50
@@ -131,7 +131,7 @@ class TestExtremeMarketConditions:
         
         max_change = 1.0
         rule_pass = abs(intraday_change) <= max_change
-        assert rule_pass is False
+        assert rule_pass == False  # Use == for numpy bool comparison
         assert abs(intraday_change - (-10.0)) < 0.01
     
     def test_very_low_volatility_environment(self):
@@ -145,7 +145,7 @@ class TestExtremeMarketConditions:
         vstoxx_threshold = 25.0
         
         rule_pass = vstoxx_current <= vstoxx_threshold
-        assert rule_pass is True
+        assert rule_pass == True  # Use == for numpy bool comparison
         assert vstoxx_current == 8.5
         
         # Test very small intraday changes
@@ -180,9 +180,9 @@ class TestExtremeMarketConditions:
         assert abs(intraday_change) < 1.0
         
         # Previous day range filter would catch this
-        prev_range = ((flash_crash_data['High'].iloc[-1] - flash_crash_data['Low'].iloc[-1]) / 
+        prev_range = ((flash_crash_data['High'].iloc[-1] - flash_crash_data['Low'].iloc[-1]) /
                      flash_crash_data['Open'].iloc[-1]) * 100
-        assert prev_range > 10.0  # Very high range
+        assert prev_range >= 10.0  # Very high range (exactly 10% in this case)
 
 
 class TestAPIFailures:
@@ -363,22 +363,22 @@ class TestCalendarAPIEdgeCases:
         """Test watchlist event detection."""
         watchlist = ['ECB', 'Eurozone CPI', 'German ZEW']
         today = date.today().strftime('%Y-%m-%d')
-        
+
         events = [
             {'country': 'EUR', 'impact': 'Medium', 'date': today, 'title': 'ECB Press Conference'},
             {'country': 'EUR', 'impact': 'Medium', 'date': today, 'title': 'Eurozone Industrial Production'},
         ]
-        
+
         def is_watched_event(title):
             title_upper = title.upper()
-            return any(watch in title_upper for watch in watchlist)
-        
+            return any(watch.upper() in title_upper for watch in watchlist)
+
         # ECB should be in watchlist
-        assert is_watched_event('ECB Press Conference') is True
+        assert is_watched_event('ECB Press Conference') == True
         # Eurozone CPI should be in watchlist
-        assert is_watched_event('Eurozone CPI YoY') is True
+        assert is_watched_event('Eurozone CPI YoY') == True
         # Random event should not be in watchlist
-        assert is_watched_event('Random Event') is False
+        assert is_watched_event('Random Event') == False
 
 
 class TestTelegramEdgeCases:

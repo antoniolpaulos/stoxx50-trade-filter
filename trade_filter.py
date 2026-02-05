@@ -283,6 +283,9 @@ def check_economic_calendar(config=None):
         all_eur_high = []
 
         for event in data:
+            # Skip None or invalid entries
+            if not event or not isinstance(event, dict):
+                continue
             country = event.get('country', '')
             impact = event.get('impact', '')
             event_date = event.get('date', '')[:10]
@@ -350,7 +353,7 @@ def check_economic_calendar(config=None):
             'error': None
         }
 
-    except requests.exceptions.RequestException as primary_error:
+    except (requests.exceptions.RequestException, ValueError, KeyError) as primary_error:
         # Try backup API if enabled
         if use_backup:
             try:
@@ -384,11 +387,12 @@ def check_economic_calendar(config=None):
 
 def send_telegram_message(config, message):
     """Send a message via Telegram bot."""
-    if not config['telegram'].get('enabled'):
+    telegram_config = config.get('telegram', {})
+    if not telegram_config.get('enabled'):
         return
 
-    bot_token = config['telegram'].get('bot_token', '')
-    chat_id = config['telegram'].get('chat_id', '')
+    bot_token = telegram_config.get('bot_token', '')
+    chat_id = telegram_config.get('chat_id', '')
 
     if not bot_token or not chat_id or bot_token == 'YOUR_BOT_TOKEN':
         return
