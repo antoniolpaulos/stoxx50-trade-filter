@@ -224,6 +224,14 @@ dashboard.py (1,280+ lines)
 ├── Control Panel - Run filter once or control daemon
 └── Central dashboard UI with all-in-one view
 
+position_sizing.py (NEW)
+├── PositionSizingCalculator class
+├── calculate_position_size() - Optimal spreads based on risk
+├── calculate_kelly_criterion() - Kelly % optimization
+├── calculate_risk_metrics() - Win rate, profit factor, EV
+├── CLI: python position_sizing.py [--balance 10000] [--credit 2.50]
+└── Dashboard APIs: /api/position-size, /api/risk-metrics
+
 backtest.py - Historical testing
 ```
 
@@ -480,24 +488,25 @@ python3 backtest.py --start 2024-01-01 --end 2024-12-31
 
 ## Context for Next Session
 
-**Current State:** Dashboard is now the central control interface with:
-- Standalone runner: `python3 dashboard.py`
-- Control panel (run filter once or control daemon)
-- Portfolio visualization at top with toggleable history
-- All features integrated and tested
+**Current State:** Complete trading system with:
+- Trade filter with GO/NO-GO signals
+- Shadow portfolio with Filter Edge tracking
+- Position sizing calculator with Kelly criterion
+- Real-time monitoring dashboard
+- All integrated and tested
 
 **Completed Today:**
-1. ✅ Dashboard UI improvements based on user feedback
-   - Renamed buttons: "Run Basic Filter" / "Run Full Filter" with tooltips
-   - Removed green border from filtered card (neutral styling)
-   - Added collapsible Daily P&L History toggle
-2. ✅ Removed redundant templates directory (HTML embedded in dashboard.py)
-3. ✅ Updated all documentation
+1. ✅ Position Sizing Calculator
+   - Calculate optimal spreads based on account balance and risk %
+   - Kelly criterion optimization (full/half/quarter)
+   - Risk metrics: profit factor, expected value
+   - CLI: `python position_sizing.py`
+   - Dashboard APIs: /api/position-size, /api/risk-metrics
 
 **Next Priorities:**
-1. Position sizing calculator - Risk management feature
-2. Enhanced paper trading analytics
-3. Additional data sources
+1. Enhanced paper trading analytics (Sharpe ratio, drawdown, export)
+2. Additional data sources (Bloomberg, WebSocket)
+3. Alert channels (Discord, SMS)
 
 ---
 
