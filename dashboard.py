@@ -14,6 +14,7 @@ import time
 from monitor import get_monitor, TradeMonitor, set_monitor
 from logger import get_logger
 from portfolio import load_portfolio
+from position_sizing import PositionSizingCalculator
 
 
 app = Flask(__name__)
@@ -232,6 +233,75 @@ def api_daemon_stop():
         })
     except Exception as e:
         logger.error(f"Error stopping daemon: {e}")
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+
+@app.route('/api/position-size')
+def api_position_size():
+    """Calculate position size based on risk parameters."""
+    try:
+        account_balance = request.args.get('balance', 10000.0, type=float)
+        credit = request.args.get('credit', 2.50, type=float)
+        wing_width = request.args.get('wing_width', 50, type=int)
+        risk_percent = request.args.get('risk_percent', 1.0, type=float)
+        use_kelly = request.args.get('kelly', False, type=lambda x: x.lower() == 'true')
+        
+        calculator = PositionSizingCalculator(account_balance)
+        position = calculator.calculate_position_size(
+            credit=credit,
+            wing_width=wing_width,
+            risk_percent=risk_percent,
+            use_kelly=use_kelly
+        )
+        
+        return jsonify({
+            'success': True,
+            'position': {
+                'spreads': position.spreads,
+                'max_loss_per_spread': position.max_loss_per_spread,
+                'total_max_loss': position.total_max_loss,
+                'total_credit': position.total_credit,
+                'risk_reward_ratio': position.risk_reward_ratio,
+                'kelly_percent': position.kelly_percent,
+                'risk_amount': position.risk_amount,
+                'account_balance': account_balance
+            }
+        })
+    except Exception as e:
+        logger.error(f"Error calculating position size: {e}")
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+
+@app.route('/api/risk-metrics')
+def api_risk_metrics():
+    """Calculate risk metrics for a trading strategy."""
+    try:
+        win_rate = request.args.get('win_rate', 0.65, type=float)
+        avg_win = request.args.get('avg_win', 250.0, type=float)
+        avg_loss = request.args.get('avg_loss', -350.0, type=float)
+        
+        calculator = PositionSizingCalculator(10000)
+        metrics = calculator.calculate_risk_metrics(
+            win_rate=win_rate,
+            avg_win=avg_win,
+            avg_loss=avg_loss
+        )
+        
+        return jsonify({
+            'success': True,
+            'metrics': {
+                'win_rate': metrics.win_rate,
+                'avg_win': metrics.avg_win,
+                'avg_loss': metrics.avg_loss,
+                'profit_factor': metrics.profit_factor,
+                'kelly_percent': metrics.kelly_percent,
+                'kelly_half': metrics.kelly_half,
+                'kelly_quarter': metrics.kelly_quarter,
+                'expected_value': metrics.expected_value
+            }
+        })
+    except Exception as e:
+        logger.error(f"Error calculating risk metrics: {e}")
         return jsonify({'success': False, 'error': str(e)}), 500
 
 
