@@ -35,5 +35,7 @@ strikes:
 ## Known Issues
 
 - VSTOXX (`V2TX.DE`) unavailable via yfinance - using VIX as warning proxy
-- backtest.py still uses VSTOXX - needs sync with trade_filter.py
-- 19/159 tests failing (minor: numpy bool comparisons, date edge cases)
+
+## Test Status
+
+All 159 tests passing.
