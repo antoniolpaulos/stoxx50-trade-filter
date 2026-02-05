@@ -2,7 +2,7 @@
 
 **Last Updated:** 2026-02-05  
 **Current Branch:** `features`  
-**Total Tests:** 210 passing ✅  
+**Total Tests:** 236 passing ✅  
 
 ---
 
@@ -30,7 +30,7 @@ STOXX50 0DTE Iron Condor Trade Filter - Python tool for evaluating market condit
 - **CLI flags:** `-p`, `--portfolio-status`, `--portfolio-reset`
 - **Tests:** `tests/unit/test_portfolio.py` (455 lines, all passing)
 
-#### ✅ Logging System (Just Implemented)
+#### ✅ Logging System
 - **File:** `logger.py` (350+ lines)
 - **Three log files:**
   - `logs/trade_filter.log` - Main app log (30-day rotation)
@@ -39,6 +39,32 @@ STOXX50 0DTE Iron Condor Trade Filter - Python tool for evaluating market condit
 - **Daily rotation** with configurable retention
 - **Structured logging** for evaluations, entries, settlements
 - **Tests:** `tests/unit/test_logger.py` (21 tests, all passing)
+
+#### ✅ Real-time Monitoring (Just Implemented)
+- **File:** `monitor.py` (430+ lines)
+- **TradeMonitor class** - Continuous background monitoring
+- **State change detection** - GO↔NO-GO transitions, rule changes, price moves
+- **State history** - Keeps last 100 states
+- **AlertManager** - Rate-limited alerts with Telegram integration
+- **Web Dashboard** - Flask-based dashboard at localhost:5000
+  - Real-time state display with auto-refresh
+  - Market data, rules status, statistics
+  - Dark theme, mobile responsive
+- **CLI flags:** `--daemon`, `--dashboard`, `--monitor-interval`
+- **Tests:** `tests/unit/test_monitor.py` (19 tests, all passing)
+
+#### ✅ Config Validation (Just Implemented)
+- **File:** `config_validator.py` (430+ lines)
+- **Schema-based validation** for all config sections
+- **Range validation** - All numeric values validated against ranges
+- **Type checking** - Strict type validation for all fields
+- **Cross-field validation** - e.g., MA deviation > intraday change
+- **Telegram token format** validation
+- **Unknown section** warnings
+- **Helpful error messages** with suggestions for fixes
+- **CLI flag:** `--validate-config`
+- **Non-strict mode** - warns but continues on errors
+- **Tests:** `tests/unit/test_config_validator.py` (26 tests, all passing)
 
 ### Architecture
 
