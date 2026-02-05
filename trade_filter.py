@@ -6,6 +6,7 @@ Determines if market conditions are favorable for trading Euro Stoxx 50 options.
 
 import argparse
 import sys
+import time
 import yaml
 import yfinance as yf
 import requests
@@ -15,6 +16,7 @@ from pathlib import Path
 from exceptions import MarketDataError, PortfolioError
 import portfolio as pf
 from logger import TradeFilterLogger, get_logger
+from monitor import start_monitoring_daemon, set_monitor
 
 # Default config path
 DEFAULT_CONFIG_PATH = Path(__file__).parent / "config.yaml"
@@ -801,6 +803,14 @@ Examples:
                         help='Path to config file (default: config.yaml)')
     parser.add_argument('--setup', action='store_true',
                         help='Run the setup wizard for config and Telegram')
+    parser.add_argument('--daemon', action='store_true',
+                        help='Run monitoring daemon (continuous monitoring)')
+    parser.add_argument('--monitor-interval', type=int, default=300,
+                        help='Monitoring check interval in seconds (default: 300)')
+    parser.add_argument('--dashboard', action='store_true',
+                        help='Launch web dashboard for monitoring')
+    parser.add_argument('--dashboard-port', type=int, default=5000,
+                        help='Web dashboard port (default: 5000)')
 
     args = parser.parse_args()
 
@@ -824,6 +834,15 @@ Examples:
         reset_portfolio_data(config)
         return
 
+    # Handle monitoring commands
+    if args.daemon:
+        run_monitoring_daemon_mode(config, args.monitor_interval)
+        return
+
+    if args.dashboard:
+        run_dashboard_mode(config, args.monitor_interval, args.dashboard_port)
+        return
+
     # Run setup wizard if requested
     if args.setup:
         setup_config()
@@ -838,6 +857,64 @@ Examples:
         run_with_portfolio(config, use_additional_filters=args.additional)
     else:
         evaluate_trade(config, use_additional_filters=args.additional)
+
+
+def run_monitoring_daemon_mode(config, interval):
+    """Run monitoring daemon mode."""
+    import signal
+    from monitor import TradeMonitor
+
+    logger = get_logger()
+    logger.info(f"Starting monitoring daemon (interval: {interval}s)")
+
+    print(colored("\n" + "=" * 60, "cyan"))
+    print(colored("  MONITORING DAEMON STARTED", "cyan", attrs=["bold"]))
+    print(colored(f"  Check interval: {interval} seconds", "cyan"))
+    print(colored("  Press Ctrl+C to stop", "yellow"))
+    print(colored("=" * 60 + "\n", "cyan"))
+
+    # Create and start monitor
+    monitor = TradeMonitor(config, check_interval=interval)
+
+    # Setup graceful shutdown
+    def signal_handler(signum, frame):
+        print(colored("\n\nShutting down daemon...", "yellow"))
+        monitor.stop()
+        print(colored("Daemon stopped.", "green"))
+        sys.exit(0)
+
+    signal.signal(signal.SIGINT, signal_handler)
+    signal.signal(signal.SIGTERM, signal_handler)
+
+    # Start monitoring
+    monitor.start()
+
+    # Keep main thread alive
+    try:
+        while True:
+            time.sleep(1)
+    except KeyboardInterrupt:
+        signal_handler(None, None)
+
+
+def run_dashboard_mode(config, interval, port):
+    """Run web dashboard mode."""
+    logger = get_logger()
+    logger.info(f"Starting web dashboard on port {port}")
+
+    print(colored("\n" + "=" * 60, "cyan"))
+    print(colored("  WEB DASHBOARD STARTING", "cyan", attrs=["bold"]))
+    print(colored(f"  URL: http://localhost:{port}", "green", attrs=["bold"]))
+    print(colored(f"  Check interval: {interval}s", "cyan"))
+    print(colored("=" * 60 + "\n", "cyan"))
+
+    # Start monitoring in background
+    monitor = start_monitoring_daemon(config, interval, enable_alerts=True)
+    set_monitor(monitor)
+
+    # Run web dashboard
+    from dashboard import run_web_dashboard
+    run_web_dashboard(host='0.0.0.0', port=port, debug=False)
 
 
 if __name__ == "__main__":
