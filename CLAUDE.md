@@ -89,20 +89,24 @@ python telegram_bot.py --webhook-url https://your-domain/telegram/webhook
 ## Key Files
 
 - `config.yaml` - User config (gitignored)
+- `config.yaml.example` - Config template
 - `portfolio.json` - Portfolio data (gitignored)
-- `HANDOVER.md` - Detailed documentation
-- `templates/dashboard.html` - Dashboard UI
+- `docs/ibkr_integration_plan.md` - IBKR setup notes
 
 ## Telegram Bot
 
-Interactive bot commands for querying status on the go:
-- `/status` - Current market conditions and GO/NO-GO verdict
-- `/portfolio` - Shadow portfolio summary with filter edge
-- `/history [n]` - Recent trade history
-- `/analytics` - P&L analytics and performance metrics
-- `/help` - Available commands
+| Command | Description |
+|---------|-------------|
+| `/status` | Current market conditions and GO/NO-GO |
+| `/portfolio` | P&L summary with filter edge |
+| `/chart` | P&L comparison chart |
+| `/filter` | Run trade filter now |
+| `/history [n]` | Recent trade history |
+| `/backtest [days]` | Run backtest (max 365) |
+| `/alerts [on\|off]` | Toggle notifications |
+| `/help` | Show all commands |
 
-Features: Rate limiting, user whitelisting, inline keyboards.
+**Service:** `systemctl --user start stoxx50-bot`
 
 ## Current State
 
