@@ -1,9 +1,9 @@
 # STOXX50 Trade Filter - Project Handover Document
 
-**Last Updated:** 2026-02-06  
-**Current Branch:** `features`  
-**Total Tests:** 249 passing ✅  
-**Status:** Feature-complete with dashboard, portfolio, position sizing, and multi-source data
+**Last Updated:** 2026-02-06
+**Current Branch:** `opencode-tests`
+**Total Tests:** 249+ passing ✅
+**Status:** Telegram bot implemented, optimizer plan created
 
 ---
 
@@ -356,20 +356,51 @@ data_sources:
   alpha_vantage_api_key: ""  # Optional: for backup
 ```
 
-### Task 6: Telegram Bot Commands (Priority: MEDIUM)
+### ✅ Task 6: Telegram Bot Commands (COMPLETED 2026-02-06)
 
-**Description:** Interactive Telegram bot for on-demand queries
+**Status:** Fully implemented
 
-**Commands:**
-- `/status` - Current market conditions (VIX, intraday, GO/NO-GO)
-- `/portfolio` - Shadow portfolio summary + filter edge
-- `/history` - Recent trades
-- `/analytics` - Sharpe, drawdown, P&L
-- `/help` - Available commands
+**Implementation:**
+- `telegram_bot.py` (857 lines) - Full Telegram bot with polling mode
+- Commands: `/start`, `/help`, `/status`, `/portfolio`, `/history`, `/analytics`
+- Rate limiting (configurable via `telegram_bot.rate_limit_enabled`)
+- User whitelisting via `telegram_bot.allowed_user_ids`
+- Systemd service for persistent operation
 
-**Plan:** Full details in `docs/telegram_bot_plan.md`
+**Files:**
+- `telegram_bot.py` - Main bot implementation
+- `tests/unit/test_telegram_bot.py` - 35 tests
+- `~/.config/systemd/user/stoxx50-bot.service` - Systemd service
 
-**Estimated:** 2-3 hours
+**Usage:**
+```bash
+# Run directly
+python telegram_bot.py --polling
+
+# Or via systemd (persistent)
+systemctl --user start stoxx50-bot
+```
+
+### Task 8: Backtest Optimizer (Priority: HIGH)
+
+**Description:** Parameter optimization tool to find optimal strategy settings
+
+**Plan:** `docs/backtest_optimizer_plan.md`
+
+**Features:**
+- Grid search over OTM%, wing width, intraday threshold, credit
+- Walk-forward validation (train 6mo, test 2mo rolling windows)
+- Sortino ratio ranking (better for options than Sharpe)
+- Overfitting detection (in-sample vs out-of-sample comparison)
+- Multiprocessing for speed
+- CSV/JSON export
+
+**CLI:**
+```bash
+python optimize.py -s 2023-01-01 -e 2024-12-31
+python optimize.py -s 2024-01-01 -e 2024-12-31 --quick
+python optimize.py -s 2023-01-01 -e 2024-12-31 --output results.csv
+```
 
 ### Task 7: Enhanced Paper Trading Analytics (Priority: MEDIUM)
 
@@ -416,11 +447,14 @@ pandas - Data handling
 ├── position_sizing.py       # Risk management & Kelly criterion
 ├── data_provider.py         # Multi-source market data (Yahoo + Alpha Vantage)
 ├── exceptions.py           # Custom exceptions
+├── telegram_bot.py          # Telegram bot (857 lines) ← NEW
 ├── config.yaml              # User config (gitignored)
 ├── config.yaml.example      # Config template
 ├── CLAUDE.md                # Project memory
 ├── HANDOVER.md              # This file
-├── docs/telegram_bot_plan.md # Telegram bot feature plan
+├── docs/
+│   ├── telegram_bot_plan.md      # Telegram bot feature plan
+│   └── backtest_optimizer_plan.md # Optimizer plan ← NEW
 ├── requirements.txt         # Dependencies
 ├── tests/
 │   ├── unit/
@@ -435,7 +469,8 @@ pandas - Data handling
 │   │   ├── test_monitor.py
 │   │   ├── test_portfolio.py
 │   │   ├── test_rules_engine.py
-│   │   └── test_telegram.py
+│   │   ├── test_telegram.py
+│   │   └── test_telegram_bot.py  # 35 tests ← NEW
 │   ├── integration/
 │   │   ├── test_api_integration.py
 │   │   └── test_trade_filter.py
@@ -498,24 +533,46 @@ python3 backtest.py --start 2024-01-01 --end 2024-12-31
 - Shadow portfolio with Filter Edge tracking
 - Position sizing calculator with Kelly criterion
 - Real-time monitoring dashboard
+- **Telegram bot with 6 commands** (NEW)
+- Systemd service for persistent bot operation
 - All integrated and tested
 
-**Completed Today:**
-1. ✅ Multi-Source Data Provider
-   - New `data_provider.py` with Yahoo Finance (primary) and Alpha Vantage (backup)
-   - Auto-fallback when primary source unavailable
-   - 13 new unit tests
-   - Alpha Vantage free tier: 25 requests/day
-   - Config: Add API key to `config.yaml` or `ALPHA_VANTAGE_API_KEY` env var
+**Completed This Session (2026-02-06):**
 
-2. ✅ Telegram Bot Feature Planned
-   - Full implementation plan in `docs/telegram_bot_plan.md`
-   - Commands: /status, /portfolio, /history, /analytics, /help
-   - Estimated effort: 2-3 hours
+1. ✅ **Telegram Bot Implemented** (`telegram_bot.py` - 857 lines)
+   - Commands: `/start`, `/help`, `/status`, `/portfolio`, `/history`, `/analytics`
+   - Rate limiting (configurable, disabled for user)
+   - User whitelisting support
+   - Inline keyboards for navigation
+   - Tests: `tests/unit/test_telegram_bot.py` (35 tests)
+
+2. ✅ **Systemd Service for Persistent Bot**
+   - Service file: `~/.config/systemd/user/stoxx50-bot.service`
+   - Commands:
+     ```bash
+     systemctl --user start stoxx50-bot    # Start bot
+     systemctl --user stop stoxx50-bot     # Stop bot
+     systemctl --user status stoxx50-bot   # Check status
+     journalctl --user -u stoxx50-bot -f   # View logs
+     ```
+   - Auto-restart on failure (10s delay)
+
+3. ✅ **Backtest Optimizer Plan Created**
+   - Full plan: `docs/backtest_optimizer_plan.md`
+   - Grid search over 4 parameters (OTM%, wing width, intraday threshold, credit)
+   - Walk-forward validation to prevent overfitting
+   - Ranks by out-of-sample Sortino ratio
+   - Multiprocessing for speed
+
+**ON HOLD (Not Yet Implemented):**
+- Dashboard P&L charts with Chart.js
+- `/alerts` command (toggle per-user alerts)
+- `/backtest` command (run backtest from Telegram)
 
 **Next Priorities:**
-1. Telegram bot commands (2-3 hrs) - or -
-2. Enhanced paper trading analytics (Sharpe ratio, drawdown, export)
+1. **Backtest Optimizer** (`optimize.py`) - plan ready at `docs/backtest_optimizer_plan.md`
+2. Dashboard charts (Chart.js P&L visualization)
+3. Additional Telegram commands (`/alerts`, `/backtest`)
 
 ---
 
@@ -547,7 +604,9 @@ For detailed session-by-session information, refer to:
 
 ---
 
-**Status:** Feature-complete with multi-source data provider  
-**Last Commit:** `fdc3a40` - Add multi-source data provider with Alpha Vantage backup  
-**Tests:** 249/249 tests passing ✅  
-**Branch:** `features` (ahead of main by 24 commits)
+**Status:** Telegram bot implemented, optimizer plan created
+**Last Commit:** Check `git log -1` for latest
+**Tests:** 249+ tests passing ✅ (35 new telegram_bot tests)
+**Branch:** `opencode-tests`
+
+**Immediate Next Step:** Implement `optimize.py` following `docs/backtest_optimizer_plan.md`
