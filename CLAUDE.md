@@ -56,6 +56,12 @@ python trade_filter.py --setup      # Telegram setup wizard
 - `HANDOVER.md` - Detailed documentation
 - `templates/dashboard.html` - Dashboard UI
 
+## Wish List
+
+- **Telegram Bot Commands** - See `docs/telegram_bot_plan.md`
+  - /status, /portfolio, /history, /analytics, /help
+  - Webhook-based, reuses existing APIs
+
 ## Current State
 
 - Branch: `features`
