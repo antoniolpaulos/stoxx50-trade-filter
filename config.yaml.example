@@ -44,6 +44,19 @@ telegram:
   bot_token: "YOUR_BOT_TOKEN"
   chat_id: "YOUR_CHAT_ID"
 
+# Telegram bot commands (optional)
+# Interactive bot for querying status, portfolio, and history
+telegram_bot:
+  # Webhook URL for production (must be HTTPS)
+  # Leave empty to use polling mode for development
+  webhook_url: ""
+  # Optional: restrict bot to specific user IDs
+  # Leave empty to allow all users
+  allowed_user_ids: []
+  # Rate limiting
+  rate_limit_window: 60       # seconds
+  rate_limit_max_requests: 10  # max requests per window
+
 # Shadow portfolio tracking
 portfolio:
   enabled: false                   # Enable portfolio tracking with -p flag

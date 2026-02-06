@@ -17,6 +17,7 @@ Euro Stoxx 50 0DTE Iron Condor trade filter with GO/NO-GO signals, shadow portfo
 | `position_sizing.py` | Risk management, Kelly criterion |
 | `data_provider.py` | Market data abstraction |
 | `backtest.py` | Historical backtesting |
+| `telegram_bot.py` | Interactive Telegram bot commands |
 
 ## Rules
 
@@ -43,11 +44,15 @@ python trade_filter.py --daemon     # Background monitoring
 # Config
 python trade_filter.py --validate-config
 python trade_filter.py --setup      # Telegram setup wizard
+
+# Telegram Bot
+python telegram_bot.py --polling    # Run bot in polling mode (dev)
+python telegram_bot.py --webhook-url https://your-domain/telegram/webhook
 ```
 
 ## Test Status
 
-269 tests (run with `pytest tests/ -v`)
+304 tests (run with `pytest tests/ -v`)
 
 ## Key Files
 
@@ -56,14 +61,19 @@ python trade_filter.py --setup      # Telegram setup wizard
 - `HANDOVER.md` - Detailed documentation
 - `templates/dashboard.html` - Dashboard UI
 
-## Wish List
+## Telegram Bot
 
-- **Telegram Bot Commands** - See `docs/telegram_bot_plan.md`
-  - /status, /portfolio, /history, /analytics, /help
-  - Webhook-based, reuses existing APIs
+Interactive bot commands for querying status on the go:
+- `/status` - Current market conditions and GO/NO-GO verdict
+- `/portfolio` - Shadow portfolio summary with filter edge
+- `/history [n]` - Recent trade history
+- `/analytics` - P&L analytics and performance metrics
+- `/help` - Available commands
+
+Features: Rate limiting, user whitelisting, inline keyboards.
 
 ## Current State
 
 - Branch: `features`
-- Feature-complete with dashboard, monitoring, position sizing
+- Feature-complete with dashboard, monitoring, position sizing, Telegram bot
 - Ready for merge to main

@@ -305,6 +305,110 @@ def api_risk_metrics():
         return jsonify({'success': False, 'error': str(e)}), 500
 
 
+@app.route('/api/status/brief')
+def api_status_brief():
+    """Get brief status for Telegram bot and other integrations."""
+    try:
+        from trade_filter import load_config, get_market_data, calculate_intraday_change
+
+        config = load_config()
+        monitor = get_monitor()
+
+        # Try to get from monitor first
+        if monitor and monitor.current_state:
+            state = monitor.current_state
+            return jsonify({
+                'trade_state': state.trade_state.value,
+                'stoxx_price': state.stoxx_price,
+                'stoxx_open': state.stoxx_open,
+                'intraday_change': state.intraday_change,
+                'vix': state.vix,
+                'reasons': state.reasons,
+                'timestamp': state.timestamp,
+                'source': 'monitor'
+            })
+
+        # Otherwise fetch fresh data
+        data = get_market_data(include_history=False)
+        intraday = calculate_intraday_change(data['stoxx_current'], data['stoxx_open'])
+
+        intraday_max = config.get('rules', {}).get('intraday_change_max', 1.0)
+        trade_state = 'GO' if abs(intraday) <= intraday_max else 'NO_GO'
+
+        reasons = []
+        if abs(intraday) > intraday_max:
+            direction = "up" if intraday > 0 else "down"
+            reasons.append(f"Trend too strong ({intraday:+.2f}% {direction})")
+
+        return jsonify({
+            'trade_state': trade_state,
+            'stoxx_price': data['stoxx_current'],
+            'stoxx_open': data['stoxx_open'],
+            'intraday_change': intraday,
+            'vix': data.get('vix'),
+            'reasons': reasons,
+            'timestamp': datetime.now().isoformat(),
+            'source': 'fresh'
+        })
+
+    except Exception as e:
+        logger.error(f"Error getting brief status: {e}")
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/api/portfolio/summary')
+def api_portfolio_summary():
+    """Get compact portfolio summary for bot."""
+    try:
+        from portfolio import load_portfolio, get_portfolio_summary
+
+        data = load_portfolio()
+        summary = get_portfolio_summary(data)
+
+        return jsonify(summary)
+    except Exception as e:
+        logger.error(f"Error getting portfolio summary: {e}")
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/telegram/webhook', methods=['POST'])
+def telegram_webhook():
+    """Handle incoming Telegram webhook updates."""
+    try:
+        from telegram_bot import get_bot
+
+        bot = get_bot()
+        if not bot:
+            return jsonify({'error': 'Bot not initialized'}), 503
+
+        update = request.get_json()
+        if not update:
+            return jsonify({'error': 'No update data'}), 400
+
+        bot.handle_update(update)
+        return jsonify({'ok': True})
+
+    except Exception as e:
+        logger.exception(f"Webhook error: {e}")
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/api/telegram/status')
+def api_telegram_status():
+    """Get Telegram bot status."""
+    try:
+        from telegram_bot import get_bot
+
+        bot = get_bot()
+        return jsonify({
+            'configured': bot.is_configured() if bot else False,
+            'enabled': bot.enabled if bot else False,
+            'whitelist_count': len(bot.whitelist) if bot else 0
+        })
+    except Exception as e:
+        return jsonify({'configured': False, 'error': str(e)})
+
+
 # HTML Template with central control interface
 DASHBOARD_HTML = '''
 <!DOCTYPE html>
@@ -1625,15 +1729,28 @@ def dashboard_html():
     return DASHBOARD_HTML
 
 
-def run_web_dashboard(host: str = '0.0.0.0', port: int = 5000, debug: bool = False):
+def run_web_dashboard(host: str = '0.0.0.0', port: int = 5000, debug: bool = False,
+                      config: Optional[Dict[str, Any]] = None):
     """
     Run the web dashboard.
-    
+
     Args:
         host: Host to bind to
         port: Port to listen on
         debug: Enable debug mode
+        config: Optional configuration dict
     """
+    # Initialize Telegram bot if configured
+    if config:
+        try:
+            from telegram_bot import TelegramBot, set_bot
+            bot = TelegramBot(config)
+            if bot.is_configured():
+                set_bot(bot)
+                logger.info("Telegram bot initialized for webhook handling")
+        except Exception as e:
+            logger.warning(f"Failed to initialize Telegram bot: {e}")
+
     logger.info(f"Starting web dashboard on {host}:{port}")
     app.run(host=host, port=port, debug=debug)
 
@@ -1681,12 +1798,18 @@ Examples:
     
     args = parser.parse_args()
     
+    # Load config for Telegram bot
+    from trade_filter import load_config
+    config = load_config()
+
     print(colored("\n" + "=" * 60, "cyan"))
     print(colored("  STOXX50 TRADE FILTER - WEB DASHBOARD", "cyan", attrs=["bold"]))
     print(colored(f"  URL: http://localhost:{args.port}", "green", attrs=["bold"]))
+    if config.get('telegram', {}).get('enabled'):
+        print(colored("  Telegram Bot: Enabled", "green"))
     print(colored("=" * 60 + "\n", "cyan"))
-    
-    run_web_dashboard(host=args.host, port=args.port, debug=args.debug)
+
+    run_web_dashboard(host=args.host, port=args.port, debug=args.debug, config=config)
 
 
 if __name__ == '__main__':
