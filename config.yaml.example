@@ -76,10 +76,11 @@ costs:
 # Requires: Eurex (DTB) Level 1 market data subscription in IBKR (~€2/month)
 ibkr:
   enabled: false                   # Set to true to use real option prices
-  host: "127.0.0.1"                # TWS/Gateway host
-  port: 7497                       # 7497=TWS Paper, 7496=TWS Live, 4002=Gateway Paper, 4001=Gateway Live
+  host: "127.0.0.1"                # TWS/Gateway host (or Docker container)
+  port: 7497                       # TWS: 7497=Paper, 7496=Live | Gateway/IBeAM: 4002=Paper, 4001=Live
   client_id: 1                     # Unique client ID for this connection
   timeout: 10                      # Connection timeout in seconds
+  # For headless servers, use IBeAM (IB Gateway in Docker): https://github.com/Voyz/ibeam
 
 # Logging
 logging:

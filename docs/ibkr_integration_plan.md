@@ -465,12 +465,44 @@ ibkr:
 
 ---
 
+## Headless Deployment with IBeAM
+
+For server/VPS deployment without a GUI, use [IBeAM](https://github.com/Voyz/ibeam) (IB Gateway in Docker):
+
+```bash
+# Pull IBeAM Docker image
+docker pull voyz/ibeam
+
+# Run IB Gateway in Docker
+docker run -d \
+  --name ibeam \
+  -p 4001:4001 \
+  -e IBEAM_ACCOUNT=your_account \
+  -e IBEAM_PASSWORD=your_password \
+  voyz/ibeam
+```
+
+Then update config.yaml:
+```yaml
+ibkr:
+  enabled: true
+  host: "127.0.0.1"
+  port: 4001  # IB Gateway Live (use 4002 for Paper)
+```
+
+**Benefits of IBeAM:**
+- Auto-login and 2FA handling
+- Automatic restarts on connection drops
+- Runs headless on servers (Raspberry Pi, VPS)
+- Much lighter than full TWS
+
+---
+
 ## Future Enhancements
 
 1. **Cache option chains** - Reduce API calls by caching strikes for the day
 2. **Greeks tracking** - Log delta, gamma, theta for analysis
 3. **Auto-reconnect** - Handle TWS restarts gracefully
-4. **IB Gateway** - Document headless setup for server deployment
 
 ---
 
