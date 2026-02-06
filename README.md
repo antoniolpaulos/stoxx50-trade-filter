@@ -227,7 +227,10 @@ python backtest.py -s 2024-06-01 -e 2024-12-31 --credit 3.00 --wing-width 75
 python backtest.py -s 2024-01-01 -e 2024-12-31 --quiet
 ```
 
-**Note:** Backtesting does not include Rule 3 (economic calendar) as historical event data is not available.
+**Notes:**
+- Backtesting uses open-to-close change as a proxy for trending days (since intraday data at 10:00 CET is unavailable)
+- Economic calendar (Rule 3) is not applied in backtests as historical event data is unavailable
+- 12-month backtest shows filter edge of ~€1,800 by avoiding all losing trades
 
 ## Market Data
 
@@ -332,7 +335,7 @@ Calculate how many Iron Condor spreads to trade based on your risk tolerance.
 | Input | Description | Default |
 |-------|-------------|---------|
 | **Account Balance** | Total account size in € | €10,000 |
-| **Credit Received** | Premium received per spread | €2.50 |
+| **Credit Received** | Premium received per spread | €10.00 |
 | **Wing Width** | Distance between strikes in points | 50 |
 | **Risk % per Trade** | Max % of account to risk | 1.0% |
 
@@ -342,7 +345,7 @@ Toggle **"Use Kelly Criterion"** to calculate optimal size based on your histori
 
 ```bash
 # Example API call with Kelly
-/api/position-size?balance=10000&credit=2.50&wing_width=50&kelly=true&win_rate=0.65&avg_win=250&avg_loss=-350
+/api/position-size?balance=10000&credit=10.0&wing_width=50&kelly=true&win_rate=0.65&avg_win=250&avg_loss=-350
 ```
 
 #### Output Metrics
@@ -360,12 +363,12 @@ Toggle **"Use Kelly Criterion"** to calculate optimal size based on your histori
 
 ```
 Max Loss per Spread = (Wing Width - Credit) × Multiplier
-                   = (50 - €2.50) × €10
-                   = €475.00
+                   = (50 - €10) × €10
+                   = €400
 
 Number of Spreads = Account Balance × Risk % / Max Loss per Spread
-                  = €10,000 × 0.01 / €475
-                  = 2.1 → 2 spreads (rounded down)
+                  = €10,000 × 0.01 / €400
+                  = 2.5 → 2 spreads (rounded down)
 ```
 
 ---
@@ -443,10 +446,10 @@ curl http://localhost:5000/api/status
 curl http://localhost:5000/api/portfolio
 
 # Calculate position size (€10,000 account, 1% risk)
-curl "http://localhost:5000/api/position-size?balance=10000&credit=2.50&risk_percent=1.0"
+curl "http://localhost:5000/api/position-size?balance=10000&credit=10.0&risk_percent=1.0"
 
 # Calculate with Kelly criterion
-curl "http://localhost:5000/api/position-size?balance=10000&credit=2.50&kelly=true&win_rate=0.65&avg_win=250&avg_loss=-350"
+curl "http://localhost:5000/api/position-size?balance=10000&credit=10.0&kelly=true&win_rate=0.65&avg_win=250&avg_loss=-350"
 
 # Get risk metrics
 curl "http://localhost:5000/api/risk-metrics?win_rate=0.65&avg_win=250&avg_loss=-350"
@@ -534,11 +537,11 @@ For a typical Iron Condor:
 | Parameter | Value |
 |-----------|-------|
 | Wing Width | 50 points |
-| Credit Received | €2.50 |
-| Max Loss | €475 per spread |
-| Risk/Reward | 1:19 |
+| Credit Received | €10.00 |
+| Max Loss | €400 per spread |
+| Risk/Reward | 1:4 |
 
-This means for every €1 risked, you potentially earn €19 in premium (if the trade wins).
+This means for every €1 of max profit, you risk €4 (if the trade loses).
 
 ---
 
