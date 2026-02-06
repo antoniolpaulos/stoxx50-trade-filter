@@ -36,6 +36,92 @@ def load_config_defaults():
     return defaults
 
 
+def calculate_realized_volatility(prices, window=20):
+    """
+    Calculate realized volatility from price series.
+
+    Args:
+        prices: Series of closing prices
+        window: Lookback window in days
+
+    Returns:
+        Annualized volatility as decimal (e.g., 0.20 for 20%)
+    """
+    import numpy as np
+
+    if len(prices) < window + 1:
+        return 0.20  # Default 20% if insufficient data
+
+    # Calculate log returns
+    returns = np.log(prices / prices.shift(1)).dropna()
+
+    if len(returns) < window:
+        return 0.20
+
+    # Rolling std of returns, annualized
+    daily_vol = returns.tail(window).std()
+    annual_vol = daily_vol * np.sqrt(252)
+
+    # Add IV premium (implied typically 10-20% higher than realized)
+    iv_estimate = annual_vol * 1.15
+
+    # Cap to reasonable range
+    return max(0.12, min(iv_estimate, 0.45))
+
+
+def estimate_credit_from_volatility(index_price, volatility, otm_percent=1.0, wing_width=50, hours_to_expiry=6.0):
+    """
+    Estimate iron condor credit using Black-Scholes and realized volatility.
+
+    Args:
+        index_price: Current index price
+        volatility: Annualized volatility (decimal)
+        otm_percent: OTM percentage for short strikes
+        wing_width: Wing width in points
+        hours_to_expiry: Hours until expiration
+
+    Returns:
+        Estimated credit in EUR
+    """
+    import math
+
+    def norm_cdf(x):
+        return 0.5 * (1 + math.erf(x / math.sqrt(2)))
+
+    def bs_call(S, K, T, r, sigma):
+        if T <= 0 or sigma <= 0:
+            return max(S - K, 0)
+        d1 = (math.log(S / K) + (r + 0.5 * sigma ** 2) * T) / (sigma * math.sqrt(T))
+        d2 = d1 - sigma * math.sqrt(T)
+        return S * norm_cdf(d1) - K * math.exp(-r * T) * norm_cdf(d2)
+
+    def bs_put(S, K, T, r, sigma):
+        if T <= 0 or sigma <= 0:
+            return max(K - S, 0)
+        d1 = (math.log(S / K) + (r + 0.5 * sigma ** 2) * T) / (sigma * math.sqrt(T))
+        d2 = d1 - sigma * math.sqrt(T)
+        return K * math.exp(-r * T) * norm_cdf(-d2) - S * norm_cdf(-d1)
+
+    # Calculate strikes
+    short_call = round(index_price * (1 + otm_percent / 100))
+    short_put = round(index_price * (1 - otm_percent / 100))
+    long_call = short_call + wing_width
+    long_put = short_put - wing_width
+
+    # Time to expiry
+    T = hours_to_expiry / (365 * 24)
+    r = 0.03
+
+    # Calculate spreads
+    call_spread = bs_call(index_price, short_call, T, r, volatility) - bs_call(index_price, long_call, T, r, volatility)
+    put_spread = bs_put(index_price, short_put, T, r, volatility) - bs_put(index_price, long_put, T, r, volatility)
+
+    credit_points = call_spread + put_spread
+    credit_eur = credit_points * 10  # Multiplier
+
+    return max(credit_eur, 0.50)  # Floor at €0.50
+
+
 def get_historical_data(start_date, end_date):
     """Fetch historical VIX and Euro Stoxx 50 data.
 
@@ -110,12 +196,26 @@ def simulate_iron_condor(entry_price, stoxx_close, call_strike, put_strike, wing
         return credit * multiplier
 
 
-def run_backtest(start_date, end_date, wing_width=50, credit=2.50, verbose=True):
-    """Run backtest over the specified date range."""
+def run_backtest(start_date, end_date, wing_width=50, credit=2.50, verbose=True, dynamic_credit=False, otm_percent=1.0):
+    """Run backtest over the specified date range.
+
+    Args:
+        start_date: Start date (YYYY-MM-DD)
+        end_date: End date (YYYY-MM-DD)
+        wing_width: Wing width in points
+        credit: Fixed credit (used if dynamic_credit=False)
+        verbose: Print detailed output
+        dynamic_credit: Estimate credit from historical volatility
+        otm_percent: OTM percentage for strikes
+    """
 
     print("\n" + "=" * 70)
     print(colored("  STOXX50 0DTE IRON CONDOR BACKTEST", "cyan", attrs=["bold"]))
     print(colored(f"  Period: {start_date} to {end_date}", "cyan"))
+    if dynamic_credit:
+        print(colored("  Credit: Dynamic (volatility-based)", "yellow"))
+    else:
+        print(colored(f"  Credit: Fixed €{credit:.2f}", "cyan"))
     print("=" * 70 + "\n")
 
     # Fetch data
@@ -175,8 +275,18 @@ def run_backtest(start_date, end_date, wing_width=50, credit=2.50, verbose=True)
 
         if should_trade:
             trades_taken += 1
-            call_strike, put_strike = calculate_strikes(stoxx_entry)
-            pnl = simulate_iron_condor(stoxx_entry, stoxx_close, call_strike, put_strike, wing_width, credit)
+            call_strike, put_strike = calculate_strikes(stoxx_entry, otm_percent)
+
+            # Calculate credit (dynamic or fixed)
+            if dynamic_credit:
+                # Get historical prices up to this date for volatility calculation
+                hist_prices = stoxx_data.loc[:date]['Close']
+                vol = calculate_realized_volatility(hist_prices, window=20)
+                day_credit = estimate_credit_from_volatility(stoxx_entry, vol, otm_percent, wing_width) / 10  # Convert to points
+            else:
+                day_credit = credit
+
+            pnl = simulate_iron_condor(stoxx_entry, stoxx_close, call_strike, put_strike, wing_width, day_credit)
             total_pnl += pnl
 
             if pnl > 0:
@@ -301,6 +411,8 @@ Note: Defaults are loaded from config.yaml (portfolio.credit, strikes.wing_width
                         help=f"Wing width in points (default: {config_defaults['wing_width']} from config)")
     parser.add_argument('--credit', '-c', type=float, default=config_defaults['credit'],
                         help=f"Credit per spread in EUR (default: {config_defaults['credit']:.2f} from config)")
+    parser.add_argument('--dynamic-credit', '-d', action='store_true',
+                        help='Estimate credit from historical volatility (ignores --credit)')
     parser.add_argument('--quiet', '-q', action='store_true', help='Only show summary, not daily details')
 
     args = parser.parse_args()
@@ -321,7 +433,9 @@ Note: Defaults are loaded from config.yaml (portfolio.credit, strikes.wing_width
         args.end,
         wing_width=args.wing_width,
         credit=args.credit,
-        verbose=not args.quiet
+        verbose=not args.quiet,
+        dynamic_credit=args.dynamic_credit,
+        otm_percent=config_defaults['otm_percent']
     )
 
 
