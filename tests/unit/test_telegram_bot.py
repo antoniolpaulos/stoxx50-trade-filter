@@ -174,7 +174,7 @@ class TestBotCommands:
         }
         return TelegramBot(config)
 
-    @patch('telegram_bot.requests.post')
+    @patch('telegram_api.requests.post')
     def test_cmd_start(self, mock_post, bot):
         """Test /start command."""
         mock_post.return_value.raise_for_status = Mock()
@@ -186,7 +186,7 @@ class TestBotCommands:
         assert 'TestUser' in response
         mock_post.assert_called_once()
 
-    @patch('telegram_bot.requests.post')
+    @patch('telegram_api.requests.post')
     def test_cmd_help(self, mock_post, bot):
         """Test /help command."""
         mock_post.return_value.raise_for_status = Mock()
@@ -198,7 +198,7 @@ class TestBotCommands:
         assert '/history' in response
         assert '/analytics' in response
 
-    @patch('telegram_bot.requests.post')
+    @patch('telegram_api.requests.post')
     @patch.object(TelegramBot, '_get_market_status')
     def test_cmd_status_go(self, mock_status, mock_post, bot):
         """Test /status command with GO state."""
@@ -218,7 +218,7 @@ class TestBotCommands:
         assert '5200' in response
         mock_post.assert_called_once()
 
-    @patch('telegram_bot.requests.post')
+    @patch('telegram_api.requests.post')
     @patch.object(TelegramBot, '_get_market_status')
     def test_cmd_status_no_go(self, mock_status, mock_post, bot):
         """Test /status command with NO_GO state."""
@@ -237,7 +237,7 @@ class TestBotCommands:
         assert 'NO GO' in response
         assert 'Trend too strong' in response
 
-    @patch('telegram_bot.requests.post')
+    @patch('telegram_api.requests.post')
     @patch.object(TelegramBot, '_get_portfolio_summary')
     def test_cmd_portfolio(self, mock_summary, mock_post, bot):
         """Test /portfolio command."""
@@ -263,7 +263,7 @@ class TestBotCommands:
         assert '+200' in response
         assert '+50' in response
 
-    @patch('telegram_bot.requests.post')
+    @patch('telegram_api.requests.post')
     @patch.object(TelegramBot, '_get_trade_history')
     def test_cmd_history(self, mock_history, mock_post, bot):
         """Test /history command."""
@@ -281,7 +281,7 @@ class TestBotCommands:
         assert '2026-02-05' in response
         assert '+25' in response
 
-    @patch('telegram_bot.requests.post')
+    @patch('telegram_api.requests.post')
     @patch.object(TelegramBot, '_get_trade_history')
     def test_cmd_history_with_arg(self, mock_history, mock_post, bot):
         """Test /history command with argument."""
@@ -292,7 +292,7 @@ class TestBotCommands:
 
         mock_history.assert_called_once_with(10)
 
-    @patch('telegram_bot.requests.post')
+    @patch('telegram_api.requests.post')
     @patch.object(TelegramBot, '_get_analytics')
     def test_cmd_analytics(self, mock_analytics, mock_post, bot):
         """Test /analytics command."""
@@ -337,7 +337,7 @@ class TestHandleUpdate:
         }
         return TelegramBot(config)
 
-    @patch('telegram_bot.requests.post')
+    @patch('telegram_api.requests.post')
     def test_handle_message_command(self, mock_post, bot):
         """Test handling a command message."""
         mock_post.return_value.raise_for_status = Mock()
@@ -356,7 +356,7 @@ class TestHandleUpdate:
         call_args = mock_post.call_args
         assert 'sendMessage' in call_args[0][0]
 
-    @patch('telegram_bot.requests.post')
+    @patch('telegram_api.requests.post')
     def test_handle_unknown_command(self, mock_post, bot):
         """Test handling unknown command."""
         mock_post.return_value.raise_for_status = Mock()
@@ -380,7 +380,7 @@ class TestHandleUpdate:
         result = bot.handle_update({})
         assert result is None
 
-    @patch('telegram_bot.requests.post')
+    @patch('telegram_api.requests.post')
     def test_rate_limiting(self, mock_post, bot):
         """Test rate limiting in update handling."""
         mock_post.return_value.raise_for_status = Mock()
@@ -406,7 +406,7 @@ class TestHandleUpdate:
         last_call = calls[-1][1]
         assert 'Rate limit' in last_call['json']['text']
 
-    @patch('telegram_bot.requests.post')
+    @patch('telegram_api.requests.post')
     def test_whitelist_rejection(self, mock_post, bot):
         """Test whitelist rejection."""
         mock_post.return_value.raise_for_status = Mock()
@@ -441,10 +441,13 @@ class TestSendMessage:
         }
         return TelegramBot(config)
 
-    @patch('telegram_bot.requests.post')
+    @patch('telegram_api.requests.post')
     def test_send_simple_message(self, mock_post, bot):
         """Test sending a simple message."""
-        mock_post.return_value.raise_for_status = Mock()
+        mock_response = Mock()
+        mock_response.raise_for_status = Mock()
+        mock_response.json.return_value = {'ok': True, 'result': {'message_id': 123}}
+        mock_post.return_value = mock_response
 
         result = bot.send_message('12345', 'Hello world')
 
@@ -456,10 +459,13 @@ class TestSendMessage:
         assert call_args['json']['text'] == 'Hello world'
         assert call_args['json']['parse_mode'] == 'HTML'
 
-    @patch('telegram_bot.requests.post')
+    @patch('telegram_api.requests.post')
     def test_send_message_with_keyboard(self, mock_post, bot):
         """Test sending message with inline keyboard."""
-        mock_post.return_value.raise_for_status = Mock()
+        mock_response = Mock()
+        mock_response.raise_for_status = Mock()
+        mock_response.json.return_value = {'ok': True, 'result': {'message_id': 123}}
+        mock_post.return_value = mock_response
 
         keyboard = {
             'inline_keyboard': [
@@ -473,10 +479,11 @@ class TestSendMessage:
         call_args = mock_post.call_args[1]
         assert 'reply_markup' in call_args['json']
 
-    @patch('telegram_bot.requests.post')
+    @patch('telegram_api.requests.post')
     def test_send_message_failure(self, mock_post, bot):
         """Test sending message failure."""
-        mock_post.side_effect = Exception("Network error")
+        import requests
+        mock_post.side_effect = requests.exceptions.RequestException("Network error")
 
         result = bot.send_message('12345', 'Test')
 
@@ -510,7 +517,7 @@ class TestCallbackHandling:
         }
         return TelegramBot(config)
 
-    @patch('telegram_bot.requests.post')
+    @patch('telegram_api.requests.post')
     @patch.object(TelegramBot, '_get_market_status')
     def test_refresh_status_callback(self, mock_status, mock_post, bot):
         """Test refresh_status callback."""

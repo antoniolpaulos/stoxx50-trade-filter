@@ -232,6 +232,58 @@ python backtest.py -s 2024-01-01 -e 2024-12-31 --quiet
 - Economic calendar (Rule 3) is not applied in backtests as historical event data is unavailable
 - 12-month backtest shows filter edge of ~€1,800 by avoiding all losing trades
 
+### Parameter Optimization
+
+Find optimal strategy parameters using grid search with walk-forward validation:
+
+```bash
+# Standard 2-year optimization
+python optimize.py -s 2023-01-01 -e 2024-12-31
+
+# Quick test with reduced parameter grid
+python optimize.py -s 2024-01-01 -e 2024-12-31 --quick
+
+# Custom parameter ranges
+python optimize.py -s 2023-01-01 -e 2024-12-31 \
+    --otm-range 0.5,0.75,1.0,1.25 \
+    --wing-range 25,50 \
+    --intraday-range 0.75,1.0,1.25 \
+    --credit-range 2.0,2.5,3.0
+
+# Walk-forward validation (6-month train, 2-month test windows)
+python optimize.py -s 2023-01-01 -e 2024-12-31 \
+    --train-months 6 --test-months 2
+
+# Export results
+python optimize.py -s 2024-01-01 -e 2024-12-31 -o results.csv
+
+# Parallel workers for faster execution
+python optimize.py -s 2023-01-01 -e 2024-12-31 --workers 4
+```
+
+**Optimizable Parameters:**
+
+| Parameter | Default | Search Range |
+|-----------|---------|--------------|
+| OTM Percent | 1.0% | 0.5% - 2.0% |
+| Wing Width | 50 pts | 25 - 100 pts |
+| Intraday Change Max | 1.0% | 0.5% - 2.0% |
+| Credit | €2.50 | €1.50 - €4.00 |
+
+**Output:**
+
+The optimizer ranks parameter sets by out-of-sample Sortino ratio and provides:
+- In-sample vs out-of-sample performance comparison
+- Robustness score (out-of-sample / in-sample ratio)
+- Recommended parameters with YAML-formatted config snippet
+- Overfitting warnings based on robustness score
+
+**Tips:**
+- Run with `--quick` first to validate your parameter ranges
+- Use walk-forward validation (`--train-months 6 --test-months 2`) to detect overfitting
+- Robustness score < 0.5 indicates likely overfitting
+- Re-run optimizer quarterly with new data
+
 ## Market Data
 
 | Data | Yahoo Finance Ticker |
@@ -245,6 +297,7 @@ python backtest.py -s 2024-01-01 -e 2024-12-31 --quiet
 |------|-------------|
 | `trade_filter.py` | Main trade filter script |
 | `backtest.py` | Backtesting script |
+| `optimize.py` | Parameter optimization tool |
 | `telegram_api.py` | Telegram API client |
 | `calendar_provider.py` | Economic calendar providers |
 | `config.yaml` | Your configuration (gitignored) |
