@@ -1042,10 +1042,14 @@ Result: ${data.result}`);
         }
         
         function updatePortfolio(data) {
-            // Save toggle states before re-rendering
-            const alwaysOpen = document.getElementById('always-history')?.classList.contains('open');
-            const filteredOpen = document.getElementById('filtered-history')?.classList.contains('open');
-            
+            // Save toggle states and scroll positions before re-rendering
+            const alwaysContainer = document.getElementById('always-history');
+            const filteredContainer = document.getElementById('filtered-history');
+            const alwaysOpen = alwaysContainer?.classList.contains('open');
+            const filteredOpen = filteredContainer?.classList.contains('open');
+            const alwaysScroll = alwaysContainer?.scrollTop || 0;
+            const filteredScroll = filteredContainer?.scrollTop || 0;
+
             const content = document.getElementById('portfolio-content');
             
             if (data.error) {
@@ -1136,6 +1140,16 @@ Result: ${data.result}`);
                     </p>
                 </div>
             `;
+
+            // Restore scroll positions after re-rendering
+            if (alwaysScroll > 0) {
+                const newAlwaysContainer = document.getElementById('always-history');
+                if (newAlwaysContainer) newAlwaysContainer.scrollTop = alwaysScroll;
+            }
+            if (filteredScroll > 0) {
+                const newFilteredContainer = document.getElementById('filtered-history');
+                if (newFilteredContainer) newFilteredContainer.scrollTop = filteredScroll;
+            }
 
             // Update P&L chart
             updatePnlChart(alwaysTrade.history || [], filtered.history || []);
