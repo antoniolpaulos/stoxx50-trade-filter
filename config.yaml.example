@@ -53,7 +53,8 @@ telegram_bot:
   # Optional: restrict bot to specific user IDs
   # Leave empty to allow all users
   allowed_user_ids: []
-  # Rate limiting
+  # Rate limiting (set enabled: false to disable)
+  rate_limit_enabled: true
   rate_limit_window: 60       # seconds
   rate_limit_max_requests: 10  # max requests per window
 

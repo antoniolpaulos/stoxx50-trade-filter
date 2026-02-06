@@ -84,7 +84,12 @@ class TelegramBot:
         bot_config = config.get('telegram_bot', {})
         self.whitelist = set(bot_config.get('allowed_user_ids', []))
 
-        self.rate_limiter = RateLimiter()
+        # Rate limiting (can be disabled in config)
+        self.rate_limit_enabled = bot_config.get('rate_limit_enabled', True)
+        self.rate_limiter = RateLimiter(
+            window=bot_config.get('rate_limit_window', RATE_LIMIT_WINDOW),
+            max_requests=bot_config.get('rate_limit_max_requests', RATE_LIMIT_MAX_REQUESTS)
+        )
 
         # Command handlers
         self.commands: Dict[str, Callable] = {
@@ -180,8 +185,8 @@ class TelegramBot:
             self.send_message(chat_id, "Sorry, you are not authorized to use this bot.")
             return None
 
-        # Check rate limit
-        if not self.rate_limiter.is_allowed(str(user_id)):
+        # Check rate limit (if enabled)
+        if self.rate_limit_enabled and not self.rate_limiter.is_allowed(str(user_id)):
             remaining_time = RATE_LIMIT_WINDOW
             self.send_message(
                 chat_id,
@@ -323,18 +328,18 @@ class TelegramBot:
             if vix:
                 vix_warn = self.config.get('rules', {}).get('vix_warn', 22)
                 if vix > vix_warn:
-                    vix_status = f" (> {vix_warn} )"
+                    vix_status = f" (&gt; {vix_warn} ⚠)"
                 else:
-                    vix_status = f" (< {vix_warn} )"
+                    vix_status = f" (&lt; {vix_warn} ✓)"
 
             intraday = status.get('intraday_change', 0)
             intraday_display = f"{intraday:+.2f}%"
             intraday_max = self.config.get('rules', {}).get('intraday_change_max', 1.0)
             intraday_status = ""
             if abs(intraday) <= intraday_max:
-                intraday_status = f" (|{abs(intraday):.2f}%| < {intraday_max}% )"
+                intraday_status = f" (|{abs(intraday):.2f}%| &lt; {intraday_max}% ✓)"
             else:
-                intraday_status = f" (|{abs(intraday):.2f}%| > {intraday_max}% )"
+                intraday_status = f" (|{abs(intraday):.2f}%| &gt; {intraday_max}% ✗)"
 
             stoxx = status.get('stoxx_price')
             stoxx_display = f"{stoxx:.2f}" if stoxx else "N/A"
