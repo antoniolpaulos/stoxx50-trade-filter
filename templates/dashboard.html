@@ -1573,10 +1573,16 @@
             const alwaysValues = mapToAllDates(alwaysData);
             const filteredValues = mapToAllDates(filteredData);
 
+            // Update existing chart in place (prevents twitching on refresh)
             if (pnlChart) {
-                pnlChart.destroy();
+                pnlChart.data.labels = allDates;
+                pnlChart.data.datasets[0].data = alwaysValues;
+                pnlChart.data.datasets[1].data = filteredValues;
+                pnlChart.update('none'); // 'none' disables animation for smoother updates
+                return;
             }
 
+            // Create chart only on first load
             pnlChart = new Chart(ctx, {
                 type: 'line',
                 data: {
@@ -1603,6 +1609,7 @@
                 options: {
                     responsive: true,
                     maintainAspectRatio: false,
+                    animation: false, // Disable animation for performance
                     scales: {
                         y: {
                             ticks: { color: '#888' },
