@@ -1,5 +1,10 @@
+# Core dependencies
 yfinance>=0.2.0
 termcolor>=2.0.0
 requests>=2.28.0
 pyyaml>=6.0
 tqdm>=4.60.0
+
+# Optional: IBKR integration for real-time option prices
+# Uncomment if using IBKR TWS/Gateway
+# ib_insync>=0.9.86

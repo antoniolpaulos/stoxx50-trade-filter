@@ -62,8 +62,24 @@ telegram_bot:
 portfolio:
   enabled: false                   # Enable portfolio tracking with -p flag
   file: "portfolio.json"           # Portfolio data file
-  credit: 10.00                    # Credit per spread for P&L calculation
+  credit: 2.50                     # Credit per spread for P&L calculation (realistic 0DTE)
   include_in_telegram: true        # Add portfolio summary to Telegram notifications
+
+# Trading costs
+costs:
+  commission_per_leg: 1.50         # EUR per option leg (IBKR Eurex)
+  total_commission: 6.00           # 4 legs round-trip (open + close = 8 legs, but IC settles)
+
+# IBKR Integration (optional)
+# Fetches real-time option prices instead of using fixed credit
+# Requires: pip install ib_insync
+# Requires: Eurex (DTB) Level 1 market data subscription in IBKR (~€2/month)
+ibkr:
+  enabled: false                   # Set to true to use real option prices
+  host: "127.0.0.1"                # TWS/Gateway host
+  port: 7497                       # 7497=TWS Paper, 7496=TWS Live, 4002=Gateway Paper, 4001=Gateway Live
+  client_id: 1                     # Unique client ID for this connection
+  timeout: 10                      # Connection timeout in seconds
 
 # Logging
 logging:
