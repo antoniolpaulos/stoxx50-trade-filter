@@ -13,7 +13,7 @@ Usage:
     from ibkr_provider import IBKRProvider, get_real_credit
 
     # Direct usage
-    provider = IBKRProvider(port=7497)
+    provider = IBKRProvider(port=7496)  # Live trading port
     if provider.connect():
         result = provider.get_iron_condor_credit(6000, otm_percent=1.0)
         print(f"Credit: €{result['credit_eur']:.2f}")
@@ -30,13 +30,14 @@ import logging
 
 # Try to import ib_insync - gracefully handle if not installed
 try:
-    from ib_insync import IB, Index, Option, util
+    from ib_insync import IB, Index, Option, Contract, util
     IBKR_AVAILABLE = True
 except ImportError:
     IBKR_AVAILABLE = False
     IB = None
     Index = None
     Option = None
+    Contract = None
 
     # Mock util for when ib_insync not installed
     class _MockUtil:
@@ -61,11 +62,12 @@ class IBKRProvider:
 
     # Euro Stoxx 50 contract specifications
     SYMBOL = 'ESTX50'
-    EXCHANGE = 'DTB'  # Eurex
+    EXCHANGE = 'EUREX'
     CURRENCY = 'EUR'
     MULTIPLIER = 10
+    INDEX_CONID = 4356500  # Euro Stoxx 50 index conId
 
-    def __init__(self, host: str = '127.0.0.1', port: int = 7497,
+    def __init__(self, host: str = '127.0.0.1', port: int = 7496,
                  client_id: int = 1, timeout: int = 10,
                  logger: Optional[logging.Logger] = None):
         """
@@ -109,9 +111,13 @@ class IBKRProvider:
             self._connected = True
             self.logger.info(f"Connected to IBKR at {self.host}:{self.port}")
 
-            # Pre-qualify the index contract
-            self._index_contract = Index(self.SYMBOL, self.EXCHANGE, self.CURRENCY)
+            # Enable delayed market data as fallback (3 = delayed, 4 = delayed-frozen)
+            self._ib.reqMarketDataType(3)
+
+            # Pre-qualify the index contract using conId for reliability
+            self._index_contract = Contract(conId=self.INDEX_CONID)
             self._ib.qualifyContracts(self._index_contract)
+            self.logger.info(f"Index contract: {self._index_contract.symbol} on {self._index_contract.exchange}")
 
             return True
 
@@ -389,7 +395,7 @@ def get_real_credit(config: Dict[str, Any], index_price: float,
     # Try to get real credit
     provider = IBKRProvider(
         host=ibkr_config.get('host', '127.0.0.1'),
-        port=ibkr_config.get('port', 7497),
+        port=ibkr_config.get('port', 7496),
         client_id=ibkr_config.get('client_id', 1),
         timeout=ibkr_config.get('timeout', 10),
         logger=logger
@@ -451,7 +457,7 @@ def get_real_credit_with_details(config: Dict[str, Any], index_price: float,
 
     provider = IBKRProvider(
         host=ibkr_config.get('host', '127.0.0.1'),
-        port=ibkr_config.get('port', 7497),
+        port=ibkr_config.get('port', 7496),
         client_id=ibkr_config.get('client_id', 1),
         timeout=ibkr_config.get('timeout', 10),
         logger=logger
@@ -488,10 +494,10 @@ if __name__ == '__main__':
         sys.exit(1)
 
     print("Testing IBKR connection...")
-    print("Make sure TWS/Gateway is running with API enabled on port 7497")
+    print("Make sure TWS/Gateway is running with API enabled on port 7496 (live) or 7497 (paper)")
     print()
 
-    with IBKRProvider(port=7497, logger=logger) as provider:
+    with IBKRProvider(port=7496, logger=logger) as provider:
         if not provider.is_connected():
             print("Failed to connect to IBKR")
             sys.exit(1)
