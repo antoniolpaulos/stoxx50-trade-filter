@@ -13,19 +13,17 @@ Commands:
 
 import json
 import time
-import hmac
-import hashlib
 from datetime import datetime
 from pathlib import Path
 from typing import Dict, Any, Optional, Callable
 from functools import wraps
 from collections import defaultdict
 
-import requests
 from flask import Flask, request, jsonify
 
 from logger import get_logger
 from exceptions import TelegramError
+from telegram_api import TelegramClient
 
 # Rate limiting settings
 RATE_LIMIT_WINDOW = 60  # seconds
@@ -79,6 +77,9 @@ class TelegramBot:
         telegram_config = config.get('telegram', {})
         self.bot_token = telegram_config.get('bot_token', '')
         self.enabled = telegram_config.get('enabled', False)
+
+        # Initialize Telegram API client
+        self._client = TelegramClient(self.bot_token, self.logger)
 
         # Whitelist (if empty, allow all)
         bot_config = config.get('telegram_bot', {})
@@ -134,24 +135,7 @@ class TelegramBot:
             self.logger.warning("Telegram bot not configured")
             return False
 
-        try:
-            url = f"https://api.telegram.org/bot{self.bot_token}/sendMessage"
-            payload = {
-                'chat_id': chat_id,
-                'text': text,
-                'parse_mode': parse_mode
-            }
-
-            if reply_markup:
-                payload['reply_markup'] = json.dumps(reply_markup)
-
-            response = requests.post(url, json=payload, timeout=10)
-            response.raise_for_status()
-
-            return True
-        except Exception as e:
-            self.logger.error(f"Failed to send Telegram message: {e}")
-            return False
+        return self._client.send_message(chat_id, text, parse_mode, reply_markup)
 
     def handle_update(self, update: Dict[str, Any]) -> Optional[str]:
         """
@@ -256,11 +240,7 @@ class TelegramBot:
 
     def _answer_callback(self, callback_id: str):
         """Answer callback query."""
-        try:
-            url = f"https://api.telegram.org/bot{self.bot_token}/answerCallbackQuery"
-            requests.post(url, json={'callback_query_id': callback_id}, timeout=5)
-        except Exception as e:
-            self.logger.error(f"Failed to answer callback: {e}")
+        self._client.answer_callback_query(callback_id)
 
     # ========== Command Handlers ==========
 
@@ -863,31 +843,14 @@ def setup_webhook(bot_token: str, webhook_url: str) -> bool:
     Returns:
         True if successful
     """
-    try:
-        url = f"https://api.telegram.org/bot{bot_token}/setWebhook"
-        response = requests.post(url, json={'url': webhook_url}, timeout=10)
-        result = response.json()
-
-        if result.get('ok'):
-            get_logger().info(f"Webhook set to {webhook_url}")
-            return True
-        else:
-            get_logger().error(f"Failed to set webhook: {result}")
-            return False
-
-    except Exception as e:
-        get_logger().exception(f"Error setting webhook: {e}")
-        return False
+    client = TelegramClient(bot_token, get_logger())
+    return client.set_webhook(webhook_url)
 
 
 def delete_webhook(bot_token: str) -> bool:
     """Delete Telegram webhook (for polling mode)."""
-    try:
-        url = f"https://api.telegram.org/bot{bot_token}/deleteWebhook"
-        response = requests.post(url, timeout=10)
-        return response.json().get('ok', False)
-    except Exception:
-        return False
+    client = TelegramClient(bot_token)
+    return client.delete_webhook()
 
 
 def run_polling(config: Dict[str, Any]):
@@ -905,7 +868,7 @@ def run_polling(config: Dict[str, Any]):
         return
 
     # Delete any existing webhook
-    delete_webhook(bot.bot_token)
+    bot._client.delete_webhook()
 
     print("Starting bot in polling mode...")
     get_logger().info("Starting Telegram bot in polling mode")
@@ -914,11 +877,7 @@ def run_polling(config: Dict[str, Any]):
 
     while True:
         try:
-            url = f"https://api.telegram.org/bot{bot.bot_token}/getUpdates"
-            params = {'offset': offset, 'timeout': 30}
-
-            response = requests.get(url, params=params, timeout=35)
-            updates = response.json().get('result', [])
+            updates = bot._client.get_updates(offset=offset, timeout=30)
 
             for update in updates:
                 offset = update['update_id'] + 1

@@ -18,6 +18,7 @@ from logger import TradeFilterLogger, get_logger
 from monitor import start_monitoring_daemon, set_monitor
 from config_validator import validate_config, check_config
 from data_provider import get_market_data as fetch_market_data, DataProviderPool
+from telegram_api import send_notification, get_chat_id_from_updates, TelegramClient
 
 # Default config path
 DEFAULT_CONFIG_PATH = Path(__file__).parent / "config.yaml"
@@ -137,54 +138,45 @@ def setup_config():
             print("Now send any message to your bot in Telegram...")
             input("Press Enter when done...")
 
-            # Fetch chat ID from bot updates
-            try:
-                url = f"https://api.telegram.org/bot{bot_token}/getUpdates"
-                response = requests.get(url, timeout=10)
-                data = response.json()
+            # Fetch chat ID from bot updates using telegram_api
+            result = get_chat_id_from_updates(bot_token)
 
-                if data.get('ok') and data.get('result'):
-                    chat_id = str(data['result'][-1]['message']['chat']['id'])
-                    user_name = data['result'][-1]['message']['from'].get('first_name', 'User')
+            if result:
+                chat_id = result['chat_id']
+                user_name = result['user_name']
 
-                    print(colored(f"\nFound chat ID for {user_name}: {chat_id}", "green"))
+                print(colored(f"\nFound chat ID for {user_name}: {chat_id}", "green"))
 
-                    # Update config
-                    config['telegram']['enabled'] = True
-                    config['telegram']['bot_token'] = bot_token
-                    config['telegram']['chat_id'] = chat_id
+                # Update config
+                config['telegram']['enabled'] = True
+                config['telegram']['bot_token'] = bot_token
+                config['telegram']['chat_id'] = chat_id
 
-                    # Write updated config
-                    with open(DEFAULT_CONFIG_PATH, 'r') as f:
-                        config_content = f.read()
+                # Write updated config
+                with open(DEFAULT_CONFIG_PATH, 'r') as f:
+                    config_content = f.read()
 
-                    # Update the telegram section
-                    import re
-                    config_content = re.sub(
-                        r'telegram:\s*\n\s*enabled:.*\n\s*bot_token:.*\n\s*chat_id:.*',
-                        f'telegram:\n  enabled: true\n  bot_token: "{bot_token}"\n  chat_id: "{chat_id}"',
-                        config_content
-                    )
+                # Update the telegram section
+                import re
+                config_content = re.sub(
+                    r'telegram:\s*\n\s*enabled:.*\n\s*bot_token:.*\n\s*chat_id:.*',
+                    f'telegram:\n  enabled: true\n  bot_token: "{bot_token}"\n  chat_id: "{chat_id}"',
+                    config_content
+                )
 
-                    with open(DEFAULT_CONFIG_PATH, 'w') as f:
-                        f.write(config_content)
+                with open(DEFAULT_CONFIG_PATH, 'w') as f:
+                    f.write(config_content)
 
-                    # Send test message
-                    print("\nSending test message...")
-                    test_url = f"https://api.telegram.org/bot{bot_token}/sendMessage"
-                    payload = {
-                        'chat_id': chat_id,
-                        'text': '✅ Trade Filter notifications enabled!',
-                        'parse_mode': 'HTML'
-                    }
-                    requests.post(test_url, json=payload, timeout=10)
+                # Send test message using telegram_api
+                print("\nSending test message...")
+                client = TelegramClient(bot_token)
+                if client.send_message(chat_id, '✅ Trade Filter notifications enabled!'):
                     print(colored("Test message sent! Check your Telegram.", "green"))
-
                 else:
-                    print(colored("\nNo messages found. Make sure you messaged your bot.", "red"))
+                    print(colored("Failed to send test message.", "yellow"))
 
-            except Exception as e:
-                print(colored(f"\nError fetching chat ID: {e}", "red"))
+            else:
+                print(colored("\nNo messages found. Make sure you messaged your bot.", "red"))
 
     print()
     print(colored("Setup complete!", "green", attrs=["bold"]))
@@ -401,26 +393,10 @@ def check_economic_calendar(config=None):
 
 def send_telegram_message(config, message):
     """Send a message via Telegram bot."""
-    telegram_config = config.get('telegram', {})
-    if not telegram_config.get('enabled'):
-        return
-
-    bot_token = telegram_config.get('bot_token', '')
-    chat_id = telegram_config.get('chat_id', '')
-
-    if not bot_token or not chat_id or bot_token == 'YOUR_BOT_TOKEN':
-        return
-
-    try:
-        url = f"https://api.telegram.org/bot{bot_token}/sendMessage"
-        payload = {
-            'chat_id': chat_id,
-            'text': message,
-            'parse_mode': 'HTML'
-        }
-        requests.post(url, json=payload, timeout=10)
-    except Exception as e:
-        print(colored(f"  [WARN] Telegram notification failed: {e}", "yellow"))
+    if not send_notification(config, message):
+        # Only warn if telegram is enabled but failed
+        if config.get('telegram', {}).get('enabled'):
+            print(colored("  [WARN] Telegram notification failed", "yellow"))
 
 
 def evaluate_trade(config, use_additional_filters=False, track_portfolio=False):
