@@ -31,16 +31,16 @@ def get_historical_data(start_date, end_date):
     return vix_data, stoxx_data
 
 
-def evaluate_day(vix_close, stoxx_open, stoxx_price_at_entry):
+def evaluate_day(vix_close, stoxx_open, stoxx_close):
     """
     Evaluate if we would trade on this day.
     Returns (should_trade, reason, intraday_change, vix_warning) tuple.
 
     Note: VIX is used as warning-only (VSTOXX unavailable via yfinance).
+    Uses open-to-close change as proxy for trending days (since intraday data unavailable).
     """
-    # Calculate intraday change at entry time (~10:00 CET)
-    # Using price between open and close as approximation
-    intraday_change = ((stoxx_price_at_entry - stoxx_open) / stoxx_open) * 100
+    # Calculate open-to-close change as proxy for trending days
+    intraday_change = ((stoxx_close - stoxx_open) / stoxx_open) * 100
 
     # VIX warning (non-blocking) - threshold 22
     vix_warning = vix_close > 22 if vix_close is not None else False
@@ -146,8 +146,8 @@ def run_backtest(start_date, end_date, wing_width=50, credit=10.0, verbose=True)
         # Using weighted average: 70% open + 30% towards midpoint
         stoxx_entry = stoxx_open + (((stoxx_high + stoxx_low) / 2) - stoxx_open) * 0.3
 
-        # Evaluate rules
-        should_trade, reason, intraday_change, vix_warning = evaluate_day(vix_close, stoxx_open, stoxx_entry)
+        # Evaluate rules (using open-to-close as proxy for trending days)
+        should_trade, reason, intraday_change, vix_warning = evaluate_day(vix_close, stoxx_open, stoxx_close)
 
         if should_trade:
             trades_taken += 1
