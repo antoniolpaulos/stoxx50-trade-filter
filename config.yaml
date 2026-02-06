@@ -1,28 +1,22 @@
-# SPX 0DTE Iron Condor Trade Filter Configuration
-
-# Rule thresholds
 rules:
-  vix_max: 22                    # Rule 1: Max VIX level
-  intraday_change_max: 1.0       # Rule 2: Max intraday change (%)
-
-# Strike calculation
+  vstoxx_max: 22
+  intraday_change_max: 1.0
 strikes:
-  otm_percent: 1.0               # How far OTM for short strikes (%)
-  wing_width: 25                 # Wing width in points
-
-# Additional filters (used with -a flag)
+  otm_percent: 1.0
+  wing_width: 50
 additional_filters:
-  ma_deviation_max: 3.0          # Max % deviation from 20 DMA
-  prev_day_range_max: 2.0        # Max previous day range (%)
-  check_vix_term_structure: true # Check VIX contango/backwardation
-
-# Telegram notifications
+  ma_deviation_max: 3.0
+  prev_day_range_max: 2.0
+  check_vix_term_structure: true
 telegram:
   enabled: true
-  bot_token: "8500564281:AAHsPsx5nLqE2kRrWU3mboUAakAz8MpQaxc"
-  chat_id: "6963877716"
-
-# Logging
+  bot_token: 8500564281:AAHsPsx5nLqE2kRrWU3mboUAakAz8MpQaxc
+  chat_id: '6963877716'
+portfolio:
+  enabled: true
+  file: portfolio.json
+  credit: 2.5
+  include_in_telegram: true
 logging:
-  file: "trade_filter.log"
-  level: "INFO"                  # DEBUG, INFO, WARNING, ERROR
+  file: trade_filter.log
+  level: INFO

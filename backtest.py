@@ -5,11 +5,35 @@ Tests the trade_filter strategy over a historical time period for Euro Stoxx 50.
 """
 
 import argparse
+import os
+import yaml
 import yfinance as yf
 import pandas as pd
 from datetime import datetime, timedelta
 from termcolor import colored
 from trade_filter import calculate_strikes
+
+
+def load_config_defaults():
+    """Load defaults from config.yaml if available."""
+    config_path = os.path.join(os.path.dirname(__file__), 'config.yaml')
+    defaults = {
+        'wing_width': 50,
+        'credit': 2.50,  # Realistic default
+        'otm_percent': 1.0
+    }
+
+    if os.path.exists(config_path):
+        try:
+            with open(config_path) as f:
+                config = yaml.safe_load(f)
+            defaults['wing_width'] = config.get('strikes', {}).get('wing_width', 50)
+            defaults['credit'] = config.get('portfolio', {}).get('credit', 2.50)
+            defaults['otm_percent'] = config.get('strikes', {}).get('otm_percent', 1.0)
+        except Exception:
+            pass  # Use defaults if config can't be loaded
+
+    return defaults
 
 
 def get_historical_data(start_date, end_date):
@@ -54,7 +78,7 @@ def evaluate_day(vix_close, stoxx_open, stoxx_close):
     return True, "Conditions met", intraday_change, vix_warning
 
 
-def simulate_iron_condor(entry_price, stoxx_close, call_strike, put_strike, wing_width=50, credit=10.0):
+def simulate_iron_condor(entry_price, stoxx_close, call_strike, put_strike, wing_width=50, credit=2.50):
     """
     Simulate Iron Condor P&L.
 
@@ -64,7 +88,7 @@ def simulate_iron_condor(entry_price, stoxx_close, call_strike, put_strike, wing
         call_strike: Short call strike
         put_strike: Short put strike
         wing_width: Width of wings in points (default 50)
-        credit: Estimated credit received per spread (default €10.00)
+        credit: Estimated credit received per spread (default €2.50)
 
     Returns:
         P&L in euros (per 1-lot, assuming €10 multiplier)
@@ -86,7 +110,7 @@ def simulate_iron_condor(entry_price, stoxx_close, call_strike, put_strike, wing
         return credit * multiplier
 
 
-def run_backtest(start_date, end_date, wing_width=50, credit=10.0, verbose=True):
+def run_backtest(start_date, end_date, wing_width=50, credit=2.50, verbose=True):
     """Run backtest over the specified date range."""
 
     print("\n" + "=" * 70)
@@ -261,15 +285,22 @@ def main():
         epilog="""
 Examples:
   python backtest.py --start 2024-01-01 --end 2024-12-31
-  python backtest.py --start 2024-06-01 --end 2024-06-30 --credit 3.00
+  python backtest.py --start 2024-06-01 --end 2024-06-30 --credit 5.00  # Aggressive preset
   python backtest.py --start 2024-01-01 --end 2024-03-31 --quiet
+
+Note: Defaults are loaded from config.yaml (portfolio.credit, strikes.wing_width)
         """
     )
 
+    # Load defaults from config.yaml
+    config_defaults = load_config_defaults()
+
     parser.add_argument('--start', '-s', required=True, help='Start date (YYYY-MM-DD)')
     parser.add_argument('--end', '-e', required=True, help='End date (YYYY-MM-DD)')
-    parser.add_argument('--wing-width', '-w', type=float, default=50, help='Wing width in points (default: 50)')
-    parser.add_argument('--credit', '-c', type=float, default=10.0, help='Estimated credit per spread in EUR (default: 10.00)')
+    parser.add_argument('--wing-width', '-w', type=float, default=config_defaults['wing_width'],
+                        help=f"Wing width in points (default: {config_defaults['wing_width']} from config)")
+    parser.add_argument('--credit', '-c', type=float, default=config_defaults['credit'],
+                        help=f"Credit per spread in EUR (default: {config_defaults['credit']:.2f} from config)")
     parser.add_argument('--quiet', '-q', action='store_true', help='Only show summary, not daily details')
 
     args = parser.parse_args()

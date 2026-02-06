@@ -522,6 +522,110 @@ def reset_portfolio_data(config):
         print("Reset cancelled.")
 
 
+def switch_preset(preset_name, config_path=None):
+    """Switch between strategy presets by updating config.yaml."""
+    if config_path is None:
+        config_path = DEFAULT_CONFIG_PATH
+
+    presets = {
+        'conservative': {
+            'otm_percent': 1.0,
+            'credit': 2.50,
+            'description': 'Conservative: 1% OTM, €2.50 credit (~€25/win, 1:19 R/R)'
+        },
+        'aggressive': {
+            'otm_percent': 0.5,
+            'credit': 5.00,
+            'description': 'Aggressive: 0.5% OTM, €5.00 credit (~€50/win, 1:9 R/R)'
+        }
+    }
+
+    if preset_name not in presets:
+        print(colored(f"Unknown preset: {preset_name}", "red"))
+        return False
+
+    preset = presets[preset_name]
+
+    # Load current config
+    with open(config_path) as f:
+        config = yaml.safe_load(f)
+
+    # Update values
+    if 'strikes' not in config:
+        config['strikes'] = {}
+    if 'portfolio' not in config:
+        config['portfolio'] = {}
+
+    config['strikes']['otm_percent'] = preset['otm_percent']
+    config['portfolio']['credit'] = preset['credit']
+
+    # Save updated config
+    with open(config_path, 'w') as f:
+        yaml.dump(config, f, default_flow_style=False, sort_keys=False)
+
+    print(colored(f"\n✓ Switched to {preset_name.upper()} preset", "green", attrs=["bold"]))
+    print(f"  {preset['description']}")
+    print(colored("\nUpdated config.yaml:", "cyan"))
+    print(f"  strikes.otm_percent: {preset['otm_percent']}")
+    print(f"  portfolio.credit: {preset['credit']}")
+    print(colored("\nNote: Run --recalculate-portfolio to update historical P&L", "yellow"))
+    return True
+
+
+def recalculate_portfolio(config):
+    """Recalculate all historical P&L with current credit setting."""
+    portfolio_config = config.get('portfolio', {})
+    portfolio_file = portfolio_config.get('file', 'portfolio.json')
+    portfolio_path = Path(__file__).parent / portfolio_file
+    credit = portfolio_config.get('credit', 2.50)
+    wing_width = config.get('strikes', {}).get('wing_width', 50)
+
+    if not portfolio_path.exists():
+        print(colored("No portfolio file exists.", "yellow"))
+        return
+
+    print(colored(f"\nRecalculating portfolio P&L with credit=€{credit:.2f}, wing_width={wing_width}", "cyan"))
+
+    data = pf.load_portfolio(portfolio_path)
+    multiplier = 10  # Euro Stoxx 50 options multiplier
+
+    for portfolio_name in ["always_trade", "filtered"]:
+        portfolio = data["portfolios"][portfolio_name]
+        total_pnl = 0
+        win_count = 0
+
+        for trade in portfolio.get("history", []):
+            stoxx_close = trade.get("stoxx_close")
+            call_strike = trade.get("call_strike")
+            put_strike = trade.get("put_strike")
+
+            # Recalculate P&L
+            if stoxx_close <= put_strike:
+                intrinsic = put_strike - stoxx_close
+                loss = min(intrinsic, wing_width) - credit
+                pnl = -loss * multiplier
+            elif stoxx_close >= call_strike:
+                intrinsic = stoxx_close - call_strike
+                loss = min(intrinsic, wing_width) - credit
+                pnl = -loss * multiplier
+            else:
+                pnl = credit * multiplier
+
+            trade["pnl"] = pnl
+            trade["outcome"] = "win" if pnl > 0 else "loss"
+            total_pnl += pnl
+            if pnl > 0:
+                win_count += 1
+
+        portfolio["total_pnl"] = total_pnl
+        portfolio["win_count"] = win_count
+
+    pf.save_portfolio(data, portfolio_path)
+
+    print(colored("✓ Portfolio recalculated successfully", "green"))
+    print(pf.format_portfolio_display(data))
+
+
 def run_with_portfolio(config, use_additional_filters=False):
     """Run trade evaluation with portfolio tracking."""
     logger = get_logger()
@@ -618,10 +722,10 @@ Examples:
   python trade_filter.py                    # Basic rules only
   python trade_filter.py -a                 # Include additional filters
   python trade_filter.py -p                 # Enable portfolio tracking
-  python trade_filter.py -a -p              # All filters + portfolio
   python trade_filter.py --portfolio-status # View portfolio status
-  python trade_filter.py --portfolio-reset  # Reset portfolio data
-  python trade_filter.py -c myconfig.yaml   # Use custom config file
+  python trade_filter.py --preset conservative  # Switch to conservative (1% OTM, €2.50)
+  python trade_filter.py --preset aggressive    # Switch to aggressive (0.5% OTM, €5.00)
+  python trade_filter.py --recalculate-portfolio # Recalc P&L with current credit
   python trade_filter.py --setup            # Run setup wizard
         """
     )
@@ -648,6 +752,10 @@ Examples:
                         help='Launch web dashboard for monitoring')
     parser.add_argument('--dashboard-port', type=int, default=5000,
                         help='Web dashboard port (default: 5000)')
+    parser.add_argument('--preset', type=str, choices=['conservative', 'aggressive'],
+                        help='Switch strategy preset (updates config.yaml)')
+    parser.add_argument('--recalculate-portfolio', action='store_true',
+                        help='Recalculate portfolio P&L with current credit setting')
 
     args = parser.parse_args()
 
@@ -676,6 +784,16 @@ Examples:
 
     if args.portfolio_reset:
         reset_portfolio_data(config)
+        return
+
+    # Handle preset switching
+    if args.preset:
+        switch_preset(args.preset, args.config or DEFAULT_CONFIG_PATH)
+        return
+
+    # Handle portfolio recalculation
+    if getattr(args, 'recalculate_portfolio', False):
+        recalculate_portfolio(config)
         return
 
     # Handle monitoring commands
