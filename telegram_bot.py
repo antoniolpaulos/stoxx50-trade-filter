@@ -91,6 +91,9 @@ class TelegramBot:
             max_requests=bot_config.get('rate_limit_max_requests', RATE_LIMIT_MAX_REQUESTS)
         )
 
+        # Per-user alert settings
+        self.user_alert_settings: Dict[str, bool] = {}
+
         # Command handlers
         self.commands: Dict[str, Callable] = {
             'start': self._cmd_start,
@@ -99,6 +102,8 @@ class TelegramBot:
             'portfolio': self._cmd_portfolio,
             'history': self._cmd_history,
             'analytics': self._cmd_analytics,
+            'alerts': self._cmd_alerts,
+            'backtest': self._cmd_backtest,
         }
 
     def is_configured(self) -> bool:
@@ -302,6 +307,15 @@ class TelegramBot:
             "• Total P&L and win rate\n"
             "• Average win/loss amounts\n"
             "• Filter effectiveness\n\n"
+            "/alerts [on|off]\n"
+            "Toggle real-time market alerts:\n"
+            "• Check current alert status\n"
+            "• Enable or disable notifications\n\n"
+            "/backtest [days]\n"
+            "Run historical backtest:\n"
+            "• Test strategy for last N days\n"
+            "• Shows trades, win rate, P&L\n"
+            "• Max 365 days\n\n"
             "<i>Bot checks are rate-limited to prevent abuse.</i>"
         )
 
@@ -540,6 +554,110 @@ class TelegramBot:
         except Exception as e:
             self.logger.exception(f"Error in /analytics: {e}")
             error_text = f"Failed to calculate analytics: {str(e)}"
+            self.send_message(chat_id, error_text)
+            return error_text
+
+    def _cmd_alerts(self, chat_id: str, user: Dict, args: list) -> str:
+        """Handle /alerts command - toggle real-time alerts."""
+        user_id = str(user.get('id'))
+
+        if not args:
+            # Show current status
+            enabled = self.user_alert_settings.get(user_id, True)
+            status = "ON ✓" if enabled else "OFF"
+            text = (
+                f"🔔 <b>Alert Settings</b>\n"
+                f"━━━━━━━━━━━━━━━━━━━━━\n\n"
+                f"Alerts are currently: <b>{status}</b>\n\n"
+                f"Use /alerts on or /alerts off to change."
+            )
+            self.send_message(chat_id, text)
+            return text
+
+        action = args[0].lower()
+        if action == 'on':
+            self.user_alert_settings[user_id] = True
+            text = "🔔 Alerts <b>enabled</b>\n\nYou will receive market alerts."
+            self.send_message(chat_id, text)
+            return text
+        elif action == 'off':
+            self.user_alert_settings[user_id] = False
+            text = "🔕 Alerts <b>disabled</b>\n\nYou will not receive market alerts."
+            self.send_message(chat_id, text)
+            return text
+        else:
+            text = "Usage: /alerts [on|off]"
+            self.send_message(chat_id, text)
+            return text
+
+    def _cmd_backtest(self, chat_id: str, user: Dict, args: list) -> str:
+        """Handle /backtest command - run historical backtest."""
+        if not args:
+            text = (
+                "📊 <b>Backtest Command</b>\n"
+                "━━━━━━━━━━━━━━━━━━━━━\n\n"
+                "Usage: /backtest [days]\n"
+                "Example: /backtest 30\n\n"
+                "Runs strategy backtest for last N days.\n"
+                "Maximum: 365 days"
+            )
+            self.send_message(chat_id, text)
+            return text
+
+        try:
+            days = int(args[0])
+            if days < 1:
+                text = "Days must be at least 1"
+                self.send_message(chat_id, text)
+                return text
+            if days > 365:
+                text = "Maximum 365 days allowed"
+                self.send_message(chat_id, text)
+                return text
+
+            # Send "running" message
+            self.send_message(chat_id, f"⏳ Running backtest for {days} days...")
+
+            from datetime import datetime, timedelta
+            end_date = datetime.now().strftime('%Y-%m-%d')
+            start_date = (datetime.now() - timedelta(days=days)).strftime('%Y-%m-%d')
+
+            from backtest import run_backtest
+            results = run_backtest(start_date, end_date, verbose=False)
+
+            # Analyze results
+            trades = [r for r in results if r.get('traded')]
+            if not trades:
+                text = f"📊 <b>Backtest Results</b>\n\nNo trades found in the last {days} days."
+                self.send_message(chat_id, text)
+                return text
+
+            wins = [r for r in trades if r.get('pnl', 0) > 0]
+            losses = [r for r in trades if r.get('pnl', 0) < 0]
+            total_pnl = sum(r.get('pnl', 0) for r in trades)
+            win_rate = (len(wins) / len(trades) * 100) if trades else 0
+
+            text = (
+                f"📊 <b>Backtest Results</b>\n"
+                f"━━━━━━━━━━━━━━━━━━━━━\n\n"
+                f"<b>Period:</b> {start_date} to {end_date}\n"
+                f"<b>Trades:</b> {len(trades)}\n"
+                f"<b>Wins:</b> {len(wins)} ({win_rate:.0f}%)\n"
+                f"<b>Losses:</b> {len(losses)}\n\n"
+                f"<b>Total P&L:</b> €{total_pnl:,.0f}\n"
+                f"<b>Avg P&L:</b> €{total_pnl/len(trades):.0f}/trade"
+            )
+
+            self.send_message(chat_id, text)
+            return text
+
+        except ValueError:
+            text = "Invalid number of days. Use: /backtest 30"
+            self.send_message(chat_id, text)
+            return text
+        except Exception as e:
+            self.logger.exception(f"Error in /backtest: {e}")
+            error_text = f"Backtest error: {str(e)}"
             self.send_message(chat_id, error_text)
             return error_text
 
