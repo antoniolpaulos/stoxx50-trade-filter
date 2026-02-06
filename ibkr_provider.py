@@ -360,10 +360,35 @@ class IBKRProvider:
         return False
 
 
+def _try_yahoo_fallback(index_price: float, strikes_config: Dict,
+                        logger: logging.Logger) -> Tuple[Optional[float], str]:
+    """Try Yahoo Finance FEZ options as fallback."""
+    try:
+        from yahoo_options import get_estimated_credit
+        credit, source = get_estimated_credit(
+            index_price,
+            otm_percent=strikes_config.get('otm_percent', 1.0),
+            wing_width=strikes_config.get('wing_width', 50),
+            logger=logger
+        )
+        if source == 'yahoo_fez':
+            return credit, source
+    except ImportError:
+        logger.debug("yahoo_options module not available")
+    except Exception as e:
+        logger.debug(f"Yahoo fallback failed: {e}")
+    return None, 'config'
+
+
 def get_real_credit(config: Dict[str, Any], index_price: float,
                     logger: Optional[logging.Logger] = None) -> Tuple[float, str]:
     """
-    Get real credit from IBKR, falling back to config value.
+    Get real credit from IBKR, falling back to Yahoo FEZ estimation, then config.
+
+    Priority:
+        1. IBKR real quotes (if enabled and connected)
+        2. Yahoo FEZ options IV estimation (free, no TWS needed)
+        3. Config fallback (fixed credit)
 
     This is the main entry point for trade_filter.py integration.
 
@@ -373,7 +398,7 @@ def get_real_credit(config: Dict[str, Any], index_price: float,
         logger: Optional logger instance
 
     Returns:
-        Tuple of (credit_eur, source) where source is 'ibkr' or 'config'
+        Tuple of (credit_eur, source) where source is 'ibkr', 'yahoo_fez', or 'config'
     """
     logger = logger or logging.getLogger(__name__)
 
@@ -385,14 +410,20 @@ def get_real_credit(config: Dict[str, Any], index_price: float,
 
     # Check if IBKR integration is enabled
     if not ibkr_config.get('enabled', False):
-        logger.debug("IBKR integration disabled, using config credit")
+        logger.debug("IBKR disabled, trying Yahoo fallback")
+        credit, source = _try_yahoo_fallback(index_price, strikes_config, logger)
+        if credit is not None:
+            return credit, source
         return fallback_credit, 'config'
 
     if not IBKR_AVAILABLE:
-        logger.warning("ib_insync not installed, using config credit")
+        logger.warning("ib_insync not installed, trying Yahoo fallback")
+        credit, source = _try_yahoo_fallback(index_price, strikes_config, logger)
+        if credit is not None:
+            return credit, source
         return fallback_credit, 'config'
 
-    # Try to get real credit
+    # Try to get real credit from IBKR
     provider = IBKRProvider(
         host=ibkr_config.get('host', '127.0.0.1'),
         port=ibkr_config.get('port', 7496),
@@ -403,7 +434,10 @@ def get_real_credit(config: Dict[str, Any], index_price: float,
 
     try:
         if not provider.connect():
-            logger.warning("Could not connect to IBKR, using config credit")
+            logger.warning("Could not connect to IBKR, trying Yahoo fallback")
+            credit, source = _try_yahoo_fallback(index_price, strikes_config, logger)
+            if credit is not None:
+                return credit, source
             return fallback_credit, 'config'
 
         result = provider.get_iron_condor_credit(
@@ -417,11 +451,17 @@ def get_real_credit(config: Dict[str, Any], index_price: float,
             logger.info(f"Got real IBKR credit: €{credit:.2f}")
             return credit, 'ibkr'
 
-        logger.warning("Could not get IBKR credit, using config credit")
+        logger.warning("Could not get IBKR credit, trying Yahoo fallback")
+        credit, source = _try_yahoo_fallback(index_price, strikes_config, logger)
+        if credit is not None:
+            return credit, source
         return fallback_credit, 'config'
 
     except Exception as e:
-        logger.error(f"IBKR error: {e}, using config credit")
+        logger.error(f"IBKR error: {e}, trying Yahoo fallback")
+        credit, source = _try_yahoo_fallback(index_price, strikes_config, logger)
+        if credit is not None:
+            return credit, source
         return fallback_credit, 'config'
 
     finally:
