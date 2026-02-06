@@ -11,18 +11,14 @@ Commands:
     /help       - Show available commands
 """
 
-import json
 import time
 from datetime import datetime
-from pathlib import Path
 from typing import Dict, Any, Optional, Callable
-from functools import wraps
 from collections import defaultdict
 
 from flask import Flask, request, jsonify
 
 from logger import get_logger
-from exceptions import TelegramError
 from telegram_api import TelegramClient
 
 # Rate limiting settings

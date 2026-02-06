@@ -8,7 +8,6 @@ import argparse
 import sys
 import time
 import yaml
-import requests
 from datetime import datetime, date, timedelta
 from termcolor import colored
 from pathlib import Path
