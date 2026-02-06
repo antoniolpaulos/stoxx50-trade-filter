@@ -19,6 +19,7 @@ from monitor import start_monitoring_daemon, set_monitor
 from config_validator import validate_config, check_config
 from data_provider import get_market_data as fetch_market_data, DataProviderPool
 from telegram_api import send_notification, get_chat_id_from_updates, TelegramClient
+from calendar_provider import check_economic_calendar
 
 # Default config path
 DEFAULT_CONFIG_PATH = Path(__file__).parent / "config.yaml"
@@ -261,134 +262,6 @@ def calculate_strikes(stoxx_price, otm_percent=1.0, wing_width=50):
     put_strike = round(put_strike)
 
     return call_strike, put_strike
-
-
-def check_economic_calendar(config=None):
-    """
-    Check economic calendars for high-impact EUR events today.
-    Uses ForexFactory API as primary, with backup from Trading Economics.
-    Also checks against a configurable watchlist for important events.
-    """
-    today = date.today().strftime('%Y-%m-%d')
-
-    # Get watchlist from config
-    watchlist = []
-    use_backup = True
-    if config and 'calendar' in config:
-        watchlist = [w.upper() for w in config['calendar'].get('always_watch', [])]
-        use_backup = config['calendar'].get('use_backup_api', True)
-
-    def is_watched_event(title):
-        """Check if event title matches any watchlist item."""
-        title_upper = title.upper()
-        return any(watch in title_upper for watch in watchlist)
-
-    def parse_forexfactory(data):
-        """Parse ForexFactory API response for EUR events."""
-        high_impact_events = []
-        all_eur_high = []
-
-        for event in data:
-            # Skip None or invalid entries
-            if not event or not isinstance(event, dict):
-                continue
-            country = event.get('country', '')
-            impact = event.get('impact', '')
-            event_date = event.get('date', '')[:10]
-            title = event.get('title', 'Unknown Event')
-
-            if country == 'EUR' and impact == 'High':
-                all_eur_high.append(f"{event_date}: {title}")
-
-            # Match if: EUR + today + (High impact OR in watchlist)
-            if country == 'EUR' and event_date == today:
-                if impact == 'High' or is_watched_event(title):
-                    event_time = event.get('date', '')[11:16]
-                    high_impact_events.append({
-                        'name': title,
-                        'time': event_time or 'All Day',
-                        'impact': impact if impact == 'High' else 'Watchlist'
-                    })
-
-        return high_impact_events, all_eur_high
-
-    def fetch_forexfactory():
-        """Fetch from ForexFactory API."""
-        url = "https://nfs.faireconomy.media/ff_calendar_thisweek.json"
-        response = requests.get(url, timeout=10)
-        response.raise_for_status()
-        return response.json()
-
-    def fetch_trading_economics():
-        """Fetch from Trading Economics calendar page (scrape JSON from HTML)."""
-        url = f"https://tradingeconomics.com/calendar"
-        headers = {'User-Agent': 'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36'}
-        response = requests.get(url, headers=headers, timeout=10)
-        response.raise_for_status()
-
-        # Try to find embedded JSON data
-        import re
-        json_match = re.search(r'var defined = (\[.*?\]);', response.text, re.DOTALL)
-        if json_match:
-            import json
-            data = json.loads(json_match.group(1))
-            events = []
-            for item in data:
-                # Match Eurozone countries
-                eurozone_countries = ['Euro Area', 'Germany', 'France', 'Italy', 'Spain', 'Netherlands']
-                if item.get('Country') in eurozone_countries:
-                    events.append({
-                        'country': 'EUR',
-                        'title': item.get('Event', ''),
-                        'date': item.get('Date', ''),
-                        'impact': 'High' if item.get('Importance', 0) >= 3 else 'Medium'
-                    })
-            return events
-        return []
-
-    # Try primary API (ForexFactory)
-    try:
-        data = fetch_forexfactory()
-        high_impact_events, all_eur_high = parse_forexfactory(data)
-
-        return {
-            'has_high_impact': len(high_impact_events) > 0,
-            'events': high_impact_events,
-            'all_eur_high_this_week': all_eur_high,
-            'source': 'ForexFactory',
-            'error': None
-        }
-
-    except (requests.exceptions.RequestException, ValueError, KeyError) as primary_error:
-        # Try backup API if enabled
-        if use_backup:
-            try:
-                data = fetch_trading_economics()
-                high_impact_events, all_eur_high = parse_forexfactory(data)
-
-                return {
-                    'has_high_impact': len(high_impact_events) > 0,
-                    'events': high_impact_events,
-                    'all_eur_high_this_week': all_eur_high,
-                    'source': 'TradingEconomics (backup)',
-                    'error': None
-                }
-            except Exception as backup_error:
-                return {
-                    'has_high_impact': None,
-                    'events': [],
-                    'all_eur_high_this_week': [],
-                    'source': None,
-                    'error': f"Both APIs failed: {str(primary_error)}"
-                }
-
-        return {
-            'has_high_impact': None,
-            'events': [],
-            'all_eur_high_this_week': [],
-            'source': None,
-            'error': f"Calendar API failed: {str(primary_error)}"
-        }
 
 
 def send_telegram_message(config, message):
