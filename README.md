@@ -245,6 +245,8 @@ python backtest.py -s 2024-01-01 -e 2024-12-31 --quiet
 |------|-------------|
 | `trade_filter.py` | Main trade filter script |
 | `backtest.py` | Backtesting script |
+| `telegram_api.py` | Telegram API client |
+| `calendar_provider.py` | Economic calendar providers |
 | `config.yaml` | Your configuration (gitignored) |
 | `config.yaml.example` | Configuration template |
 | `requirements.txt` | Python dependencies |

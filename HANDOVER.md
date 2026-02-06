@@ -38,11 +38,13 @@ The filter correctly identifies trending days (>1% move) and avoided all 20 loss
 ## Architecture
 
 ```
-trade_filter.py          # Main entry point
+trade_filter.py          # Main entry point (770 lines)
 backtest.py              # Historical testing (open-to-close filter)
+telegram_api.py          # Unified Telegram API client (280 lines)
+calendar_provider.py     # Economic calendar providers (280 lines)
 portfolio.py             # Shadow portfolio tracking
-dashboard.py             # Flask web dashboard (530 lines)
-templates/dashboard.html # Dashboard UI (1,426 lines)
+dashboard.py             # Flask web dashboard
+templates/dashboard.html # Dashboard UI
 telegram_bot.py          # Telegram bot (8 commands)
 monitor.py               # Real-time monitoring daemon
 position_sizing.py       # Kelly criterion calculator
@@ -51,9 +53,10 @@ logger.py                # Structured logging
 ```
 
 ### Recent Refactoring
-- **Dashboard:** Moved 1,400 lines of embedded HTML to `templates/dashboard.html`
-- **Backtest:** Changed filter from estimated entry price to open-to-close change
-- **Defaults:** Credit €2.50 → €10.00 across all files
+- **telegram_api.py:** Consolidated 3 Telegram implementations into unified client
+- **calendar_provider.py:** Extracted economic calendar with ForexFactory/TradingEconomics classes
+- **trade_filter.py:** Reduced from 922 to 770 lines (-17%)
+- **Cleanup:** Removed unused imports across modules
 
 ---
 
@@ -166,19 +169,19 @@ python -m pytest tests/ -v
 
 ```
 /home/antonio/Playground/stoxx50-trade-filter/
-├── trade_filter.py
-├── backtest.py
-├── portfolio.py
-├── dashboard.py
-├── telegram_bot.py
-├── monitor.py
-├── position_sizing.py
-├── config_validator.py
-├── logger.py
+├── trade_filter.py        # Main entry point
+├── backtest.py            # Historical backtesting
+├── telegram_api.py        # Telegram API client
+├── calendar_provider.py   # Economic calendar APIs
+├── portfolio.py           # Shadow portfolio
+├── dashboard.py           # Web dashboard
+├── telegram_bot.py        # Telegram bot
+├── monitor.py             # Real-time monitoring
+├── position_sizing.py     # Kelly criterion
+├── config_validator.py    # Config validation
+├── logger.py              # Logging system
 ├── templates/
 │   └── dashboard.html
-├── docs/
-│   └── backtest_optimizer_plan.md
 ├── tests/
 │   ├── unit/
 │   └── integration/

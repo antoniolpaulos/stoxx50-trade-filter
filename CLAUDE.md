@@ -9,6 +9,8 @@ Euro Stoxx 50 0DTE Iron Condor trade filter with GO/NO-GO signals, shadow portfo
 | Module | Purpose |
 |--------|---------|
 | `trade_filter.py` | Main entry point, rule evaluation |
+| `telegram_api.py` | Unified Telegram API client |
+| `calendar_provider.py` | Economic calendar (ForexFactory, TradingEconomics) |
 | `portfolio.py` | Shadow portfolio (Always Trade vs Filtered) |
 | `logger.py` | Logging with rotation (app/trades/errors) |
 | `monitor.py` | Real-time monitoring daemon |
@@ -74,6 +76,7 @@ Features: Rate limiting, user whitelisting, inline keyboards.
 
 ## Current State
 
-- Branch: `features`
+- Branch: `main` (stable)
 - Feature-complete with dashboard, monitoring, position sizing, Telegram bot
-- Ready for merge to main
+- Refactored: telegram_api.py, calendar_provider.py extracted
+- 304 tests passing
