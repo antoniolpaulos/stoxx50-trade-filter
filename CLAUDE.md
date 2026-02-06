@@ -76,7 +76,12 @@ Features: Rate limiting, user whitelisting, inline keyboards.
 
 ## Current State
 
-- Branch: `main` (stable)
 - Feature-complete with dashboard, monitoring, position sizing, Telegram bot
 - Refactored: telegram_api.py, calendar_provider.py extracted
 - 304 tests passing
+
+## Branch Workflow
+
+- **Develop on `features`** - all work happens here
+- **Merge to `main`** - only when stable, main is production-ready
+- Stay on `features` after merging
