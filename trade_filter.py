@@ -46,7 +46,7 @@ DEFAULT_CONFIG = {
     'portfolio': {
         'enabled': False,
         'file': 'portfolio.json',
-        'credit': 2.50,
+        'credit': 10.0,
         'include_in_telegram': True
     },
     'logging': {
@@ -682,7 +682,7 @@ def run_with_portfolio(config, use_additional_filters=False):
     portfolio_config = config.get('portfolio', {})
     portfolio_file = portfolio_config.get('file', 'portfolio.json')
     portfolio_path = Path(__file__).parent / portfolio_file
-    credit = portfolio_config.get('credit', 2.50)
+    credit = portfolio_config.get('credit', 10.0)
 
     # Load portfolio
     try:

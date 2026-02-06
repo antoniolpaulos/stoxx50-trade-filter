@@ -63,7 +63,7 @@ class ConfigValidator:
         'additional_filters': {},
         'calendar': {'always_watch': [], 'use_backup_api': True},
         'telegram': {'enabled': False, 'bot_token': '', 'chat_id': ''},
-        'portfolio': {'enabled': False, 'file': 'portfolio.json', 'credit': 2.50},
+        'portfolio': {'enabled': False, 'file': 'portfolio.json', 'credit': 10.0},
         'logging': {'enabled': True, 'level': 'INFO', 'log_dir': 'logs'}
     }
     
@@ -418,7 +418,7 @@ class ConfigValidator:
         
         # Check portfolio credit vs wing width
         if 'portfolio' in config and 'strikes' in config:
-            credit = config['portfolio'].get('credit', 2.50)
+            credit = config['portfolio'].get('credit', 10.0)
             wing_width = config['strikes'].get('wing_width', 50)
             
             max_loss = wing_width - credit

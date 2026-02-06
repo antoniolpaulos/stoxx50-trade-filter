@@ -54,7 +54,7 @@ def evaluate_day(vix_close, stoxx_open, stoxx_price_at_entry):
     return True, "Conditions met", intraday_change, vix_warning
 
 
-def simulate_iron_condor(entry_price, stoxx_close, call_strike, put_strike, wing_width=50, credit=2.50):
+def simulate_iron_condor(entry_price, stoxx_close, call_strike, put_strike, wing_width=50, credit=10.0):
     """
     Simulate Iron Condor P&L.
 
@@ -64,7 +64,7 @@ def simulate_iron_condor(entry_price, stoxx_close, call_strike, put_strike, wing
         call_strike: Short call strike
         put_strike: Short put strike
         wing_width: Width of wings in points (default 50)
-        credit: Estimated credit received per spread (default €2.50)
+        credit: Estimated credit received per spread (default €10.00)
 
     Returns:
         P&L in euros (per 1-lot, assuming €10 multiplier)
@@ -86,7 +86,7 @@ def simulate_iron_condor(entry_price, stoxx_close, call_strike, put_strike, wing
         return credit * multiplier
 
 
-def run_backtest(start_date, end_date, wing_width=50, credit=2.50, verbose=True):
+def run_backtest(start_date, end_date, wing_width=50, credit=10.0, verbose=True):
     """Run backtest over the specified date range."""
 
     print("\n" + "=" * 70)
@@ -269,7 +269,7 @@ Examples:
     parser.add_argument('--start', '-s', required=True, help='Start date (YYYY-MM-DD)')
     parser.add_argument('--end', '-e', required=True, help='End date (YYYY-MM-DD)')
     parser.add_argument('--wing-width', '-w', type=float, default=50, help='Wing width in points (default: 50)')
-    parser.add_argument('--credit', '-c', type=float, default=2.50, help='Estimated credit per spread in EUR (default: 2.50)')
+    parser.add_argument('--credit', '-c', type=float, default=10.0, help='Estimated credit per spread in EUR (default: 10.00)')
     parser.add_argument('--quiet', '-q', action='store_true', help='Only show summary, not daily details')
 
     args = parser.parse_args()

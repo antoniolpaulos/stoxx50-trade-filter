@@ -241,7 +241,7 @@ def api_position_size():
     """Calculate position size based on risk parameters."""
     try:
         account_balance = request.args.get('balance', 10000.0, type=float)
-        credit = request.args.get('credit', 2.50, type=float)
+        credit = request.args.get('credit', 10.0, type=float)
         wing_width = request.args.get('wing_width', 50, type=int)
         risk_percent = request.args.get('risk_percent', 1.0, type=float)
         use_kelly = request.args.get('kelly', False, type=lambda x: x.lower() == 'true')

@@ -287,7 +287,7 @@ class PositionSizingCalculator:
             
             try:
                 position = self.calculate_position_size(
-                    credit=2.50,
+                    credit=10.0,
                     wing_width=wing_width,
                     risk_percent=risk_percent,
                     win_rate=win_rate,
@@ -303,7 +303,7 @@ class PositionSizingCalculator:
 
 def calculate_position_size_cli(
     account_balance: float = 10000.0,
-    credit: float = 2.50,
+    credit: float = 10.0,
     wing_width: int = 50,
     risk_percent: float = 1.0,
     use_kelly: bool = False
@@ -339,8 +339,8 @@ if __name__ == "__main__":
     
     parser.add_argument("--balance", type=float, default=10000,
                         help="Account balance in euros (default: 10000)")
-    parser.add_argument("--credit", type=float, default=2.50,
-                        help="Credit received per spread (default: 2.50)")
+    parser.add_argument("--credit", type=float, default=10.0,
+                        help="Credit received per spread (default: 10.00)")
     parser.add_argument("--wing-width", type=int, default=50,
                         help="Wing width in points (default: 50)")
     parser.add_argument("--risk", type=float, default=1.0,

@@ -75,7 +75,7 @@ def save_portfolio(data, path=None):
         raise PortfolioError(f"Failed to save portfolio: {e}")
 
 
-def calculate_pnl(stoxx_close, call_strike, put_strike, wing_width=50, credit=2.50):
+def calculate_pnl(stoxx_close, call_strike, put_strike, wing_width=50, credit=10.0):
     """
     Calculate Iron Condor P&L at expiration.
 
@@ -84,7 +84,7 @@ def calculate_pnl(stoxx_close, call_strike, put_strike, wing_width=50, credit=2.
         call_strike: Short call strike
         put_strike: Short put strike
         wing_width: Width of wings in points (default 50)
-        credit: Credit received per spread (default 2.50)
+        credit: Credit received per spread (default 10.00)
 
     Returns:
         P&L in euros (per 1-lot, assuming EUR10 multiplier)
@@ -106,7 +106,7 @@ def calculate_pnl(stoxx_close, call_strike, put_strike, wing_width=50, credit=2.
         return credit * multiplier
 
 
-def settle_open_trade(portfolio_name, stoxx_close, data, wing_width=50, credit=2.50):
+def settle_open_trade(portfolio_name, stoxx_close, data, wing_width=50, credit=10.0):
     """
     Settle an open trade by calculating P&L and moving to history.
 

@@ -62,7 +62,7 @@ telegram_bot:
 portfolio:
   enabled: false                   # Enable portfolio tracking with -p flag
   file: "portfolio.json"           # Portfolio data file
-  credit: 2.50                     # Credit per spread for P&L calculation
+  credit: 10.00                    # Credit per spread for P&L calculation
   include_in_telegram: true        # Add portfolio summary to Telegram notifications
 
 # Logging
