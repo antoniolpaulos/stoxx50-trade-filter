@@ -18,7 +18,7 @@ from exceptions import MarketDataError, ValidationError
 class TestGetMarketData:
     """Test get_market_data function with mocked yfinance."""
     
-    @patch('trade_filter.yf.Ticker')
+    @patch('data_provider.yf.Ticker')
     def test_fetch_stoxx50_data_success(self, mock_ticker, sample_stoxx50_data):
         """Test successful STOXX50 data fetch."""
         mock_stoxx_ticker = Mock()
@@ -33,7 +33,7 @@ class TestGetMarketData:
         assert result['stoxx_open'] == sample_stoxx50_data['Open'].iloc[-1]
         mock_ticker.assert_called_with("^STOXX50E")
     
-    @patch('trade_filter.yf.Ticker')
+    @patch('data_provider.yf.Ticker')
     def test_fetch_vix_data_alongside_stoxx50(self, mock_ticker, sample_vix_data, sample_stoxx50_data):
         """Test fetching both VIX and STOXX50 data."""
         def mock_ticker_side_effect(symbol):
@@ -52,7 +52,7 @@ class TestGetMarketData:
         assert 'vix' in result
         assert result['vix'] == sample_vix_data['Close'].iloc[-1]
     
-    @patch('trade_filter.yf.Ticker')
+    @patch('data_provider.yf.Ticker')
     def test_fetch_stoxx50_data_failure(self, mock_ticker):
         """Test handling of STOXX50 data fetch failure."""
         mock_ticker.side_effect = Exception("Network error")
@@ -60,17 +60,17 @@ class TestGetMarketData:
         with pytest.raises(Exception):
             get_market_data()
     
-    @patch('trade_filter.yf.Ticker')
+    @patch('data_provider.yf.Ticker')
     def test_empty_stoxx50_data(self, mock_ticker):
         """Test handling of empty STOXX50 data."""
         mock_stoxx_ticker = Mock()
         mock_stoxx_ticker.history.return_value = pd.DataFrame()
         mock_ticker.return_value = mock_stoxx_ticker
         
-        with pytest.raises(MarketDataError, match="Unable to fetch market data"):
+        with pytest.raises(MarketDataError, match="All providers failed"):
             get_market_data()
     
-    @patch('trade_filter.yf.Ticker')
+    @patch('data_provider.yf.Ticker')
     def test_get_market_data_with_history(self, mock_ticker, sample_stoxx50_data):
         """Test fetching market data with historical data for additional filters."""
         mock_stoxx_ticker = Mock()
@@ -85,7 +85,7 @@ class TestGetMarketData:
         # First call uses 5d, later call for extended MA uses 1mo
         mock_stoxx_ticker.history.assert_any_call(period='5d')
     
-    @patch('trade_filter.yf.Ticker')
+    @patch('data_provider.yf.Ticker')
     def test_missing_columns_in_data(self, mock_ticker):
         """Test handling of data with missing columns."""
         invalid_data = pd.DataFrame({
@@ -99,7 +99,7 @@ class TestGetMarketData:
         with pytest.raises(Exception):  # KeyError when accessing missing columns
             get_market_data()
     
-    @patch('trade_filter.yf.Ticker')
+    @patch('data_provider.yf.Ticker')
     def test_negative_vix_values(self, mock_ticker, sample_stoxx50_data):
         """Test handling of negative VIX values."""
         negative_vix_data = pd.DataFrame({
@@ -210,7 +210,7 @@ class TestMarketDataValidation:
 class TestHistoricalDataCalculations:
     """Test historical data calculations with mocked data."""
     
-    @patch('trade_filter.yf.Ticker')
+    @patch('data_provider.yf.Ticker')
     def test_calculate_20_day_ma(self, mock_ticker):
         """Test 20-day moving average calculation."""
         # Generate 30 days of sample data
@@ -233,7 +233,7 @@ class TestHistoricalDataCalculations:
         if 'ma_20' in result:
             assert result['ma_20'] > 0
     
-    @patch('trade_filter.yf.Ticker')
+    @patch('data_provider.yf.Ticker')
     def test_calculate_previous_day_range(self, mock_ticker):
         """Test previous day range calculation."""
         # Create data with at least 2 days
@@ -268,7 +268,7 @@ class TestHistoricalDataCalculations:
 class TestTickerSymbols:
     """Test correct ticker symbols are used."""
     
-    @patch('trade_filter.yf.Ticker')
+    @patch('data_provider.yf.Ticker')
     def test_correct_stoxx50_ticker(self, mock_ticker, sample_stoxx50_data):
         """Test that correct STOXX50 ticker is used."""
         mock_stoxx_ticker = Mock()
@@ -281,7 +281,7 @@ class TestTickerSymbols:
         calls = [call for call in mock_ticker.call_args_list if call[0][0] == '^STOXX50E']
         assert len(calls) > 0
     
-    @patch('trade_filter.yf.Ticker')
+    @patch('data_provider.yf.Ticker')
     def test_correct_vix_ticker(self, mock_ticker, sample_stoxx50_data, sample_vix_data):
         """Test that correct VIX ticker is used."""
         def mock_ticker_side_effect(symbol):
@@ -304,7 +304,7 @@ class TestTickerSymbols:
 class TestMarketDataEdgeCases:
     """Test market data edge cases."""
     
-    @patch('trade_filter.yf.Ticker')
+    @patch('data_provider.yf.Ticker')
     def test_vix_optional_empty_data(self, mock_ticker, sample_stoxx50_data):
         """Test that empty VIX data doesn't break functionality."""
         def mock_ticker_side_effect(symbol):
@@ -323,7 +323,7 @@ class TestMarketDataEdgeCases:
         assert 'stoxx_current' in result
         assert 'vix' not in result  # VIX should not be in result if empty
     
-    @patch('trade_filter.yf.Ticker')
+    @patch('data_provider.yf.Ticker')
     def test_single_day_data(self, mock_ticker):
         """Test handling of single day data."""
         single_day_data = pd.DataFrame({

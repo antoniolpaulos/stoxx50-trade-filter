@@ -17,7 +17,7 @@ from exceptions import TelegramError
 class TestSendTelegramMessage:
     """Test send_telegram_message function from trade_filter.py."""
     
-    @patch('trade_filter.requests.post')
+    @patch('telegram_api.requests.post')
     def test_send_message_success(self, mock_post, sample_telegram_config):
         """Test successful Telegram message sending."""
         mock_response = Mock()
@@ -44,7 +44,7 @@ class TestSendTelegramMessage:
         assert call_args[1]['json']['text'] == message
         assert call_args[1]['json']['parse_mode'] == 'HTML'
     
-    @patch('trade_filter.requests.post')
+    @patch('telegram_api.requests.post')
     def test_send_message_with_html(self, mock_post, sample_telegram_config):
         """Test sending message with HTML formatting."""
         mock_response = Mock()
@@ -70,7 +70,7 @@ class TestSendTelegramMessage:
         assert '<pre>' in call_args[1]['json']['text']
         assert call_args[1]['json']['parse_mode'] == 'HTML'
     
-    @patch('trade_filter.requests.post')
+    @patch('telegram_api.requests.post')
     def test_send_go_notification(self, mock_post, sample_telegram_config):
         """Test sending GO notification with strike prices."""
         mock_response = Mock()
@@ -101,7 +101,7 @@ Wings: 50 pts
         assert '5128' in call_args[1]['json']['text']
         assert '5232' in call_args[1]['json']['text']
     
-    @patch('trade_filter.requests.post')
+    @patch('telegram_api.requests.post')
     def test_send_no_go_notification(self, mock_post, sample_telegram_config):
         """Test sending NO-GO notification."""
         mock_response = Mock()
@@ -130,7 +130,7 @@ Reasons:
         assert 'NO GO - DO NOT TRADE' in call_args[1]['json']['text']
         assert 'ECB Interest Rate Decision' in call_args[1]['json']['text']
     
-    @patch('trade_filter.requests.post')
+    @patch('telegram_api.requests.post')
     def test_telegram_disabled(self, mock_post, sample_telegram_config):
         """Test that no message is sent when Telegram is disabled."""
         config = {
@@ -146,7 +146,7 @@ Reasons:
         # Should not make any API calls when disabled
         mock_post.assert_not_called()
     
-    @patch('trade_filter.requests.post')
+    @patch('telegram_api.requests.post')
     def test_missing_bot_token(self, mock_post):
         """Test behavior when bot_token is missing."""
         config = {
@@ -162,7 +162,7 @@ Reasons:
         # Should not make API call with empty token
         mock_post.assert_not_called()
     
-    @patch('trade_filter.requests.post')
+    @patch('telegram_api.requests.post')
     def test_missing_chat_id(self, mock_post):
         """Test behavior when chat_id is missing."""
         config = {
@@ -178,7 +178,7 @@ Reasons:
         # Should not make API call with empty chat_id
         mock_post.assert_not_called()
     
-    @patch('trade_filter.requests.post')
+    @patch('telegram_api.requests.post')
     def test_placeholder_token(self, mock_post):
         """Test behavior when using placeholder token."""
         config = {
@@ -194,7 +194,7 @@ Reasons:
         # Should not make API call with placeholder
         mock_post.assert_not_called()
     
-    @patch('trade_filter.requests.post')
+    @patch('telegram_api.requests.post')
     def test_telegram_api_failure(self, mock_post, sample_telegram_config):
         """Test handling of Telegram API failure."""
         import requests
@@ -207,7 +207,7 @@ Reasons:
         # Should not raise exception, just silently fail
         send_telegram_message(config, "Test message")
     
-    @patch('trade_filter.requests.post')
+    @patch('telegram_api.requests.post')
     def test_telegram_timeout(self, mock_post, sample_telegram_config):
         """Test handling of Telegram API timeout."""
         import requests
@@ -220,21 +220,22 @@ Reasons:
         # Should not raise exception, just silently fail
         send_telegram_message(config, "Test message")
     
-    @patch('trade_filter.requests.post')
+    @patch('telegram_api.requests.post')
     def test_telegram_invalid_token(self, mock_post, sample_telegram_config):
         """Test handling of invalid bot token."""
+        import requests as req
         mock_response = Mock()
-        mock_response.raise_for_status.side_effect = Exception("Unauthorized")
+        mock_response.raise_for_status.side_effect = req.exceptions.HTTPError("Unauthorized")
         mock_post.return_value = mock_response
-        
+
         config = {
             'telegram': sample_telegram_config
         }
-        
+
         # Should not raise exception, just silently fail
         send_telegram_message(config, "Test message")
     
-    @patch('trade_filter.requests.post')
+    @patch('telegram_api.requests.post')
     def test_long_message(self, mock_post, sample_telegram_config):
         """Test sending long messages."""
         mock_response = Mock()
@@ -253,7 +254,7 @@ Reasons:
         # Should be called with long message
         mock_post.assert_called_once()
     
-    @patch('trade_filter.requests.post')
+    @patch('telegram_api.requests.post')
     def test_message_with_emojis(self, mock_post, sample_telegram_config):
         """Test sending message with emojis."""
         mock_response = Mock()
@@ -287,7 +288,7 @@ class TestTelegramConfiguration:
         chat_id = sample_telegram_config['chat_id']
         assert chat_id.isdigit() or chat_id.startswith('-')
     
-    @patch('trade_filter.requests.post')
+    @patch('telegram_api.requests.post')
     def test_no_telegram_section(self, mock_post):
         """Test behavior when Telegram section is missing."""
         config = {}  # No telegram section
@@ -297,7 +298,7 @@ class TestTelegramConfiguration:
         # Should not make API call
         mock_post.assert_not_called()
     
-    @patch('trade_filter.requests.post')
+    @patch('telegram_api.requests.post')
     def test_incomplete_telegram_section(self, mock_post):
         """Test behavior when Telegram section is incomplete."""
         config = {

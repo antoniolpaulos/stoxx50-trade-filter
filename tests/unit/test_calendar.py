@@ -1,5 +1,5 @@
 """
-Unit tests for calendar functionality - testing real functions from trade_filter.py.
+Unit tests for calendar functionality - testing real functions from calendar_provider.py.
 """
 
 import pytest
@@ -11,14 +11,14 @@ from unittest.mock import Mock, patch
 # Add parent directory to path for imports
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from trade_filter import check_economic_calendar
+from calendar_provider import check_economic_calendar
 from exceptions import CalendarAPIError
 
 
 class TestCheckEconomicCalendar:
     """Test check_economic_calendar function from trade_filter.py."""
     
-    @patch('trade_filter.requests.get')
+    @patch('calendar_provider.requests.get')
     def test_no_high_impact_events(self, mock_get, sample_config):
         """Test when no high-impact EUR events today."""
         today = date.today().strftime('%Y-%m-%d')
@@ -47,7 +47,7 @@ class TestCheckEconomicCalendar:
         assert len(result['events']) == 0
         assert result['source'] == 'ForexFactory'
     
-    @patch('trade_filter.requests.get')
+    @patch('calendar_provider.requests.get')
     def test_high_impact_ecb_event(self, mock_get, sample_config):
         """Test detection of high-impact ECB event."""
         today = date.today().strftime('%Y-%m-%d')
@@ -71,7 +71,7 @@ class TestCheckEconomicCalendar:
         assert result['events'][0]['name'] == 'ECB Interest Rate Decision'
         assert result['events'][0]['time'] == '14:15'
     
-    @patch('trade_filter.requests.get')
+    @patch('calendar_provider.requests.get')
     def test_high_impact_eurozone_cpi(self, mock_get, sample_config):
         """Test detection of high-impact Eurozone CPI event."""
         today = date.today().strftime('%Y-%m-%d')
@@ -94,7 +94,7 @@ class TestCheckEconomicCalendar:
         assert len(result['events']) == 1
         assert 'CPI' in result['events'][0]['name']
     
-    @patch('trade_filter.requests.get')
+    @patch('calendar_provider.requests.get')
     def test_multiple_high_impact_events(self, mock_get, sample_config):
         """Test detection of multiple high-impact events."""
         today = date.today().strftime('%Y-%m-%d')
@@ -128,7 +128,7 @@ class TestCheckEconomicCalendar:
         assert result['has_high_impact'] is True
         assert len(result['events']) == 2  # Only high impact events
     
-    @patch('trade_filter.requests.get')
+    @patch('calendar_provider.requests.get')
     def test_watchlist_event_detection(self, mock_get, sample_config):
         """Test detection of watchlist events (medium impact but watched)."""
         today = date.today().strftime('%Y-%m-%d')
@@ -152,7 +152,7 @@ class TestCheckEconomicCalendar:
         assert len(result['events']) == 1
         assert 'impact' in result['events'][0]
     
-    @patch('trade_filter.requests.get')
+    @patch('calendar_provider.requests.get')
     def test_ignore_usd_events(self, mock_get, sample_config):
         """Test that USD events are ignored."""
         today = date.today().strftime('%Y-%m-%d')
@@ -180,20 +180,20 @@ class TestCheckEconomicCalendar:
         assert result['has_high_impact'] is False
         assert len(result['events']) == 0
     
-    @patch('trade_filter.requests.get')
+    @patch('calendar_provider.requests.get')
     def test_forexfactory_api_failure(self, mock_get, sample_config):
         """Test handling of ForexFactory API failure."""
         import requests
         mock_get.side_effect = requests.exceptions.RequestException("Connection timeout")
         
         result = check_economic_calendar(sample_config)
-        
+
         # Should have error but not crash
         assert result['has_high_impact'] is None
         assert result['error'] is not None
-        assert 'ForexFactory' in result['error'] or 'Both APIs failed' in result['error']
+        assert 'Calendar API failed' in result['error']
     
-    @patch('trade_filter.requests.get')
+    @patch('calendar_provider.requests.get')
     def test_backup_api_usage(self, mock_get, sample_config):
         """Test fallback to backup API when primary fails."""
         import requests
@@ -222,7 +222,7 @@ class TestCheckEconomicCalendar:
         # Should have used backup API
         # Note: This depends on the actual implementation behavior
     
-    @patch('trade_filter.requests.get')
+    @patch('calendar_provider.requests.get')
     def test_empty_api_response(self, mock_get, sample_config):
         """Test handling of empty API response."""
         mock_response = Mock()
@@ -235,7 +235,7 @@ class TestCheckEconomicCalendar:
         assert result['has_high_impact'] is False
         assert len(result['events']) == 0
     
-    @patch('trade_filter.requests.get')
+    @patch('calendar_provider.requests.get')
     def test_malformed_api_response(self, mock_get, sample_config):
         """Test handling of malformed API response."""
         mock_response = Mock()
@@ -252,7 +252,7 @@ class TestCheckEconomicCalendar:
         # Should handle gracefully
         assert result['has_high_impact'] is not None  # Should be False, not error
     
-    @patch('trade_filter.requests.get')
+    @patch('calendar_provider.requests.get')
     def test_events_different_dates(self, mock_get, sample_config):
         """Test that only today's events are considered."""
         today = date.today().strftime('%Y-%m-%d')
@@ -284,7 +284,7 @@ class TestCheckEconomicCalendar:
     
     def test_no_config_provided(self):
         """Test function works without config (uses defaults)."""
-        with patch('trade_filter.requests.get') as mock_get:
+        with patch('calendar_provider.requests.get') as mock_get:
             mock_response = Mock()
             mock_response.json.return_value = []
             mock_response.raise_for_status.return_value = None
@@ -298,7 +298,7 @@ class TestCheckEconomicCalendar:
 class TestCalendarWatchlist:
     """Test calendar watchlist functionality."""
     
-    @patch('trade_filter.requests.get')
+    @patch('calendar_provider.requests.get')
     def test_all_watchlist_events_detected(self, mock_get):
         """Test that all watchlist events are properly detected."""
         today = date.today().strftime('%Y-%m-%d')
@@ -341,7 +341,7 @@ class TestCalendarWatchlist:
 class TestCalendarResponseStructure:
     """Test structure of calendar response."""
     
-    @patch('trade_filter.requests.get')
+    @patch('calendar_provider.requests.get')
     def test_response_structure(self, mock_get, sample_config):
         """Test that response has expected structure."""
         today = date.today().strftime('%Y-%m-%d')
@@ -378,7 +378,7 @@ class TestCalendarResponseStructure:
 class TestCalendarErrorHandling:
     """Test calendar error handling."""
     
-    @patch('trade_filter.requests.get')
+    @patch('calendar_provider.requests.get')
     def test_timeout_error(self, mock_get, sample_config):
         """Test handling of timeout errors."""
         import requests
@@ -389,7 +389,7 @@ class TestCalendarErrorHandling:
         assert result['error'] is not None
         assert 'timeout' in result['error'].lower() or 'failed' in result['error'].lower()
     
-    @patch('trade_filter.requests.get')
+    @patch('calendar_provider.requests.get')
     def test_http_error(self, mock_get, sample_config):
         """Test handling of HTTP errors."""
         import requests
@@ -402,7 +402,7 @@ class TestCalendarErrorHandling:
         # Should handle error gracefully
         assert result['has_high_impact'] is None or result['error'] is not None
     
-    @patch('trade_filter.requests.get')
+    @patch('calendar_provider.requests.get')
     def test_json_decode_error(self, mock_get, sample_config):
         """Test handling of JSON decode errors."""
         mock_response = Mock()
