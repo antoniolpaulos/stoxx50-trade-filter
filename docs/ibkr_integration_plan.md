@@ -1,5 +1,20 @@
 # IBKR Integration Plan
 
+## Status (2026-02-06)
+
+| Component | Status | Notes |
+|-----------|--------|-------|
+| `ibkr_provider.py` | ✅ Complete | Works with TWS on port 7496 |
+| `yahoo_options.py` | ✅ Complete | VSTOXX fallback when TWS offline |
+| Unit tests | ✅ Complete | 29 tests in test_ibkr_provider.py |
+| Live tests | ✅ Complete | 7 tests (skip when TWS unavailable) |
+| IBC headless setup | ❌ Failed | Standalone installer incompatible with IBC folder structure |
+| IBeAM setup | ❌ Wrong API | Uses Client Portal API, not TWS API |
+
+**Current workaround:** Keep TWS running during market hours (09:00-17:30 CET).
+
+---
+
 ## Overview
 
 Add Interactive Brokers TWS API integration to fetch real-time Euro Stoxx 50 option prices, replacing the fixed credit assumption with actual market data.

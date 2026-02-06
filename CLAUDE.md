@@ -9,6 +9,8 @@ Euro Stoxx 50 0DTE Iron Condor trade filter with GO/NO-GO signals, shadow portfo
 | Module | Purpose |
 |--------|---------|
 | `trade_filter.py` | Main entry point, rule evaluation |
+| `ibkr_provider.py` | IBKR TWS API for real option prices |
+| `yahoo_options.py` | Yahoo Finance VSTOXX-based credit estimation |
 | `telegram_api.py` | Unified Telegram API client |
 | `calendar_provider.py` | Economic calendar (ForexFactory, TradingEconomics) |
 | `portfolio.py` | Shadow portfolio (Always Trade vs Filtered) |
@@ -18,7 +20,7 @@ Euro Stoxx 50 0DTE Iron Condor trade filter with GO/NO-GO signals, shadow portfo
 | `config_validator.py` | Schema-based config validation |
 | `position_sizing.py` | Risk management, Kelly criterion |
 | `data_provider.py` | Market data abstraction |
-| `backtest.py` | Historical backtesting |
+| `backtest.py` | Historical backtesting with dynamic credit |
 | `telegram_bot.py` | Interactive Telegram bot commands |
 
 ## Rules
@@ -26,6 +28,30 @@ Euro Stoxx 50 0DTE Iron Condor trade filter with GO/NO-GO signals, shadow portfo
 1. **Intraday Change**: |change| ≤ 1% (blocking)
 2. **Economic Calendar**: No high-impact EUR events (blocking)
 3. **VIX**: Warning only if > 22 (non-blocking)
+
+## Credit Data Sources
+
+Fallback chain for iron condor credit:
+
+| Priority | Source | Requirement |
+|----------|--------|-------------|
+| 1 | IBKR TWS | TWS running on port 7496 |
+| 2 | Yahoo VSTOXX | None (free, uses V2TX.DE) |
+| 3 | Config | None (fixed €2.50 default) |
+
+```bash
+# Test IBKR connection (requires TWS running)
+python -c "from ibkr_provider import IBKRProvider; p = IBKRProvider(); p.connect() and print(p.get_index_price())"
+
+# Test Yahoo fallback
+python yahoo_options.py
+```
+
+**IBKR Setup Notes:**
+- Contract: conId=4356500, exchange=EUREX (not DTB)
+- Delayed data enabled as fallback
+- IBC/IB Gateway headless setup incomplete (folder structure mismatch with standalone installer)
+- For now: keep TWS open during market hours, or rely on Yahoo fallback
 
 ## Quick Commands
 
@@ -42,6 +68,10 @@ python trade_filter.py --portfolio-reset
 # Dashboard & Monitoring
 python dashboard.py                 # Web UI at localhost:5000
 python trade_filter.py --daemon     # Background monitoring
+
+# Backtest
+python backtest.py -s 2026-01-01 -e 2026-02-06        # Fixed credit
+python backtest.py -s 2026-01-01 -e 2026-02-06 -d     # Dynamic credit (volatility-based)
 
 # Config
 python trade_filter.py --validate-config
@@ -77,11 +107,40 @@ Features: Rate limiting, user whitelisting, inline keyboards.
 ## Current State
 
 - Feature-complete with dashboard, monitoring, position sizing, Telegram bot
-- Refactored: telegram_api.py, calendar_provider.py extracted
-- 304 tests passing
+- IBKR integration working (requires TWS running)
+- Yahoo VSTOXX fallback for credit estimation when TWS offline
+- Dynamic credit backtest using historical volatility
+- 304+ tests passing
 
 ## Branch Workflow
 
 - **Develop on `features`** - all work happens here
 - **Merge to `main`** - only when stable, main is production-ready
 - Stay on `features` after merging
+
+## Session Notes (2026-02-06)
+
+### IBKR Integration
+- Implemented `ibkr_provider.py` with real option quotes from TWS
+- Fixed contract spec: conId=4356500, exchange=EUREX, delayed data fallback
+- Works with TWS on port 7496 (live) or 7497 (paper)
+- **IBC/IB Gateway headless setup failed**: standalone installer creates different folder structure than IBC expects; would need "offline" installer
+- Workaround: keep TWS open during market hours
+
+### Yahoo Finance Fallback
+- `yahoo_options.py` uses VSTOXX (V2TX.DE) for implied volatility
+- Estimates credit via Black-Scholes when TWS not running
+- Free alternative, no account needed
+
+### Backtest Improvements
+- `--dynamic-credit` flag estimates credit from 20-day realized volatility
+- More realistic P&L than fixed €2.50 assumption
+- Dynamic: ~€6/trade average vs Fixed: €25/trade
+
+### Scripts Added
+- `scripts/setup_ibc.sh` - IBC setup (incomplete, for reference)
+- `scripts/setup_ibeam.sh` - IBeAM setup (wrong API, doesn't work with ib_insync)
+
+### TODO
+- [ ] Revisit IBC with offline IB Gateway installer
+- [ ] Add historical VSTOXX data source for backtest (V2TX.DE has no history)
