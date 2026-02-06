@@ -143,7 +143,9 @@ def settle_open_trade(portfolio_name, stoxx_close, data, wing_width=50, credit=1
         "call_strike": open_trade["call_strike"],
         "put_strike": open_trade["put_strike"],
         "pnl": pnl,
-        "outcome": "win" if pnl > 0 else "loss"
+        "outcome": "win" if pnl > 0 else "loss",
+        "credit": open_trade.get("credit", credit),
+        "credit_source": open_trade.get("credit_source", "config")
     }
 
     # Update portfolio

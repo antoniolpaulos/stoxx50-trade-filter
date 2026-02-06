@@ -19,6 +19,7 @@ from config_validator import validate_config, check_config
 from data_provider import get_market_data as fetch_market_data, DataProviderPool
 from telegram_api import send_notification, get_chat_id_from_updates, TelegramClient
 from calendar_provider import check_economic_calendar
+from ibkr_provider import get_real_credit, IBKR_AVAILABLE
 
 # Default config path
 DEFAULT_CONFIG_PATH = Path(__file__).parent / "config.yaml"
@@ -634,7 +635,11 @@ def run_with_portfolio(config, use_additional_filters=False):
     portfolio_config = config.get('portfolio', {})
     portfolio_file = portfolio_config.get('file', 'portfolio.json')
     portfolio_path = Path(__file__).parent / portfolio_file
-    credit = portfolio_config.get('credit', 10.0)
+    fallback_credit = portfolio_config.get('credit', 2.50)
+
+    # Credit will be fetched after we have the index price
+    credit = fallback_credit
+    credit_source = 'config'
 
     # Load portfolio
     try:
@@ -676,6 +681,17 @@ def run_with_portfolio(config, use_additional_filters=False):
         pf.save_portfolio(portfolio_data, portfolio_path)
         return
 
+    # Get real credit from IBKR if available, otherwise use config
+    index_price = result['data']['stoxx_current']
+    credit, credit_source = get_real_credit(config, index_price, logger)
+
+    # Log credit source
+    if credit_source == 'ibkr':
+        logger.info(f"Using real IBKR credit: €{credit:.2f}")
+        print(colored(f"\n  💰 Real credit from IBKR: €{credit:.2f}", "cyan"))
+    else:
+        logger.info(f"Using config credit: €{credit:.2f}")
+
     # Record new trades
     today = date.today().strftime('%Y-%m-%d')
     trade_info = {
@@ -684,7 +700,8 @@ def run_with_portfolio(config, use_additional_filters=False):
         "call_strike": result['call_strike'],
         "put_strike": result['put_strike'],
         "wing_width": result['wing_width'],
-        "credit": credit
+        "credit": credit,
+        "credit_source": credit_source
     }
 
     # Always record to always_trade portfolio
