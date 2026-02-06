@@ -11,6 +11,7 @@ A Python tool that determines if market conditions are favorable for trading Eur
 - **Additional filters** (optional):
   - 20-day moving average deviation
   - Previous day range
+- **Telegram Bot** - Interactive commands for status, portfolio, charts, and backtesting
 - **Telegram notifications** - Get GO/NO-GO alerts on your phone
 - **Configurable thresholds** via YAML config file
 - **Backtesting** - Test the strategy on historical data
@@ -66,6 +67,59 @@ telegram:
   enabled: true
   bot_token: "your_bot_token"    # Get from @BotFather
   chat_id: "your_chat_id"        # Get by messaging your bot, then run --setup
+```
+
+### Telegram Bot Commands
+
+Once configured, the bot supports these interactive commands:
+
+| Command | Description |
+|---------|-------------|
+| `/help` | Show all available commands |
+| `/status` | Current market status and GO/NO-GO verdict |
+| `/portfolio` | Shadow portfolio performance summary |
+| `/chart` | P&L comparison chart (Always Trade vs Filtered) |
+| `/filter` | Run the trade filter and get results |
+| `/config` | Show current configuration settings |
+| `/alerts [on\|off]` | Toggle real-time market alerts |
+| `/backtest [days]` | Run historical backtest (max 365 days) |
+
+**Example:**
+```
+/backtest 30
+```
+Returns a summary of strategy performance over the last 30 days.
+
+### Running the Bot as a Service
+
+For persistent operation, run the bot as a systemd user service:
+
+```bash
+# Create service file
+mkdir -p ~/.config/systemd/user
+cat > ~/.config/systemd/user/stoxx50-bot.service << 'EOF'
+[Unit]
+Description=STOXX50 Telegram Bot
+After=network.target
+
+[Service]
+Type=simple
+WorkingDirectory=/path/to/stoxx50-trade-filter
+ExecStart=/path/to/stoxx50-trade-filter/venv/bin/python telegram_bot.py
+Restart=always
+RestartSec=10
+
+[Install]
+WantedBy=default.target
+EOF
+
+# Enable and start
+systemctl --user daemon-reload
+systemctl --user enable stoxx50-bot
+systemctl --user start stoxx50-bot
+
+# Check status
+systemctl --user status stoxx50-bot
 ```
 
 ## Usage
@@ -206,6 +260,7 @@ The dashboard provides a complete graphical interface for the STOXX50 Trade Filt
 
 - **Control Panel** - Run the filter once or control the monitoring daemon
 - **Shadow Portfolio** - Track paper trading performance for Always Trade vs Filtered strategies
+- **P&L Charts** - Interactive Chart.js visualization comparing cumulative P&L
 - **Position Sizing Calculator** - Calculate optimal position size based on risk parameters
 - **Real-time Monitoring** - Background daemon with state change detection
 - **Risk Metrics** - Kelly criterion, profit factor, expected value
@@ -515,6 +570,7 @@ The daemon will:
 | File | Description |
 |------|-------------|
 | `dashboard.py` | Web dashboard server (Flask) |
+| `telegram_bot.py` | Interactive Telegram bot |
 | `position_sizing.py` | Position sizing calculator |
 | `monitor.py` | Real-time monitoring daemon |
 | `portfolio.py` | Shadow portfolio tracking |
