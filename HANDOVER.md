@@ -1,9 +1,9 @@
 # STOXX50 Trade Filter - Project Handover Document
 
-**Last Updated:** 2026-02-05  
+**Last Updated:** 2026-02-06  
 **Current Branch:** `features`  
-**Total Tests:** 236 passing ✅  
-**Status:** Feature-complete with dashboard central control interface
+**Total Tests:** 249 passing ✅  
+**Status:** Feature-complete with dashboard, portfolio, position sizing, and multi-source data
 
 ---
 
@@ -340,51 +340,54 @@ python3 trade_filter.py --validate-config
 
 ## Next Tasks (Future Development)
 
-### Task 3: Position Sizing Calculator (Priority: HIGH)
+### ✅ Task 5: Additional Data Sources (COMPLETED 2026-02-06)
 
-**Description:** Add risk management with position sizing based on account balance.
+**Status:** Fully implemented
+
+**Implementation:**
+- `data_provider.py` - Multi-source provider with Yahoo Finance (primary) and Alpha Vantage (backup)
+- Alpha Vantage: Free tier 25 requests/day, symbol: STOXX50
+- Auto-fallback when primary source unavailable
+- 13 unit tests added
+
+**Configuration:**
+```yaml
+data_sources:
+  alpha_vantage_api_key: ""  # Optional: for backup
+```
+
+### Task 6: Telegram Bot Commands (Priority: MEDIUM)
+
+**Description:** Interactive Telegram bot for on-demand queries
+
+**Commands:**
+- `/status` - Current market conditions (VIX, intraday, GO/NO-GO)
+- `/portfolio` - Shadow portfolio summary + filter edge
+- `/history` - Recent trades
+- `/analytics` - Sharpe, drawdown, P&L
+- `/help` - Available commands
+
+**Plan:** Full details in `docs/telegram_bot_plan.md`
+
+**Estimated:** 2-3 hours
+
+### Task 7: Enhanced Paper Trading Analytics (Priority: MEDIUM)
+
+**Description:** Advanced performance metrics for shadow portfolio
 
 **Requirements:**
-- Calculate position size based on account balance
-- Max risk per trade (e.g., 1-2% of portfolio)
-- Kelly criterion option
-- Show max loss per iron condor
-- Risk/reward ratio display
-
-**Suggested Implementation:**
-1. Create `position_sizing.py` module
-2. Add risk calculation methods
-3. Integrate into trade evaluation output
-4. Add config options for risk parameters
-
-### Task 4: Enhanced Paper Trading (Priority: MEDIUM)
-
-**Description:** Track hypothetical vs actual performance, compare strategies.
-
-**Requirements:**
-- Compare filtered vs always-trade performance
-- Track theoretical vs actual fills
-- Strategy comparison metrics
-- Performance attribution analysis
-
-**Suggested Implementation:**
-1. Extend portfolio.py with comparison features
-2. Add metrics tracking (Sharpe, Sortino, max drawdown)
-3. Export capabilities (CSV/Excel)
-
-### Task 5: Additional Data Sources (Priority: LOW)
-
-**Description:** Support for additional data providers beyond yfinance.
-
-**Options:**
-- Bloomberg API
-- Alpha Vantage
-- Interactive Brokers API
-- Real-time WebSocket feeds
+- Sharpe ratio, Sortino ratio
+- Maximum drawdown tracking
+- Profit factor, expected value
+- CSV/Excel export
 
 ---
 
-## Technical Notes
+## Questions to Resolve (Future)
+
+1. Dashboard enhancements? (charts, real-time?)
+2. Telegram bot commands?
+3. Machine learning? (pattern detection)
 
 ### Key Dependencies
 ```
@@ -410,20 +413,22 @@ pandas - Data handling
 ├── monitor.py               # Real-time monitoring
 ├── dashboard.py             # Web dashboard (Flask)
 ├── config_validator.py      # Config validation
-├── exceptions.py            # Custom exceptions
+├── position_sizing.py       # Risk management & Kelly criterion
+├── data_provider.py         # Multi-source market data (Yahoo + Alpha Vantage)
+├── exceptions.py           # Custom exceptions
 ├── config.yaml              # User config (gitignored)
 ├── config.yaml.example      # Config template
 ├── CLAUDE.md                # Project memory
 ├── HANDOVER.md              # This file
+├── docs/telegram_bot_plan.md # Telegram bot feature plan
 ├── requirements.txt         # Dependencies
-├── session-ses_3d5b.md      # Session history
-├── session-ses_summary.md   # Session summary
 ├── tests/
 │   ├── unit/
 │   │   ├── test_backtest.py
 │   │   ├── test_calendar.py
 │   │   ├── test_config.py
 │   │   ├── test_config_validator.py
+│   │   ├── test_data_provider.py    # NEW: 13 tests
 │   │   ├── test_edge_cases.py
 │   │   ├── test_logger.py
 │   │   ├── test_market_data.py
@@ -496,17 +501,21 @@ python3 backtest.py --start 2024-01-01 --end 2024-12-31
 - All integrated and tested
 
 **Completed Today:**
-1. ✅ Position Sizing Calculator
-   - Calculate optimal spreads based on account balance and risk %
-   - Kelly criterion optimization (full/half/quarter)
-   - Risk metrics: profit factor, expected value
-   - CLI: `python position_sizing.py`
-   - Dashboard APIs: /api/position-size, /api/risk-metrics
+1. ✅ Multi-Source Data Provider
+   - New `data_provider.py` with Yahoo Finance (primary) and Alpha Vantage (backup)
+   - Auto-fallback when primary source unavailable
+   - 13 new unit tests
+   - Alpha Vantage free tier: 25 requests/day
+   - Config: Add API key to `config.yaml` or `ALPHA_VANTAGE_API_KEY` env var
+
+2. ✅ Telegram Bot Feature Planned
+   - Full implementation plan in `docs/telegram_bot_plan.md`
+   - Commands: /status, /portfolio, /history, /analytics, /help
+   - Estimated effort: 2-3 hours
 
 **Next Priorities:**
-1. Enhanced paper trading analytics (Sharpe ratio, drawdown, export)
-2. Additional data sources (Bloomberg, WebSocket)
-3. Alert channels (Discord, SMS)
+1. Telegram bot commands (2-3 hrs) - or -
+2. Enhanced paper trading analytics (Sharpe ratio, drawdown, export)
 
 ---
 
@@ -538,7 +547,7 @@ For detailed session-by-session information, refer to:
 
 ---
 
-**Status:** Feature-complete, ready for merge to main  
-**Last Commit:** `0664e35` - Update handover document with monitoring and config validation  
-**Tests:** 236/236 core tests passing ✅  
-**Branch:** `features` (ahead of main by 7 commits)
+**Status:** Feature-complete with multi-source data provider  
+**Last Commit:** `fdc3a40` - Add multi-source data provider with Alpha Vantage backup  
+**Tests:** 249/249 tests passing ✅  
+**Branch:** `features` (ahead of main by 24 commits)

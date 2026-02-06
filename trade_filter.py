@@ -8,7 +8,6 @@ import argparse
 import sys
 import time
 import yaml
-import yfinance as yf
 import requests
 from datetime import datetime, date, timedelta
 from termcolor import colored
@@ -18,6 +17,7 @@ import portfolio as pf
 from logger import TradeFilterLogger, get_logger
 from monitor import start_monitoring_daemon, set_monitor
 from config_validator import validate_config, check_config
+from data_provider import get_market_data as fetch_market_data, DataProviderPool
 
 # Default config path
 DEFAULT_CONFIG_PATH = Path(__file__).parent / "config.yaml"
@@ -213,52 +213,38 @@ def check_and_prompt_setup(config):
 
 
 def get_market_data(include_history=False):
-    """Fetch current VIX and Euro Stoxx 50 data."""
+    """Fetch current VIX and Euro Stoxx 50 data using data provider pool."""
     logger = get_logger()
     logger.debug("Fetching market data...")
 
     try:
-        vix = yf.Ticker("^VIX")
-        stoxx = yf.Ticker("^STOXX50E")
+        data = fetch_market_data(include_history=include_history)
 
-        vix_data = vix.history(period="5d")
-        stoxx_data = stoxx.history(period="5d" if include_history else "1d")
-
-        if stoxx_data.empty:
+        if data.stoxx_current is None:
             error_msg = "Unable to fetch market data. Market may be closed."
             logger.error(error_msg)
             raise MarketDataError(error_msg)
 
         result = {
-            'stoxx_current': stoxx_data['Close'].iloc[-1],
-            'stoxx_open': stoxx_data['Open'].iloc[-1]
+            'stoxx_current': data.stoxx_current,
+            'stoxx_open': data.stoxx_open,
+            'source': data.source
         }
 
-        # VIX is optional (warning only)
-        if not vix_data.empty:
-            result['vix'] = vix_data['Close'].iloc[-1]
+        if data.vix is not None:
+            result['vix'] = data.vix
 
-        if include_history and len(stoxx_data) >= 2:
-            # Previous day data for additional filters
-            prev_day = stoxx_data.iloc[-2]
-            result['prev_high'] = prev_day['High']
-            result['prev_low'] = prev_day['Low']
-            result['prev_close'] = prev_day['Close']
-            result['prev_range_pct'] = ((prev_day['High'] - prev_day['Low']) / prev_day['Close']) * 100
-
-            # Calculate 20-day moving average (approximate with available data)
-            if len(stoxx_data) >= 5:
-                result['ma_20_approx'] = stoxx_data['Close'].mean()  # Use available data
-
-            # Get more history for proper MA calculation
-            stoxx_extended = yf.Ticker("^STOXX50E").history(period="1mo")
-            if len(stoxx_extended) >= 20:
-                result['ma_20'] = stoxx_extended['Close'].tail(20).mean()
-            else:
-                result['ma_20'] = stoxx_extended['Close'].mean()
-
-        # VSTOXX term structure data is limited on yfinance
-        # Skipping term structure check for Euro Stoxx 50
+        if include_history:
+            if data.prev_high is not None:
+                result['prev_high'] = data.prev_high
+            if data.prev_low is not None:
+                result['prev_low'] = data.prev_low
+            if data.prev_close is not None:
+                result['prev_close'] = data.prev_close
+            if data.prev_range_pct is not None:
+                result['prev_range_pct'] = data.prev_range_pct
+            if data.ma_20 is not None:
+                result['ma_20'] = data.ma_20
 
         logger.log_market_data_fetch(True, result)
         return result
