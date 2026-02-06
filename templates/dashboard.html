@@ -601,6 +601,190 @@
             color: #888;
             font-style: italic;
         }
+
+        /* Filter Results Styles */
+        .filter-results {
+            padding: 15px;
+        }
+
+        .filter-status {
+            font-size: 32px;
+            font-weight: bold;
+            text-align: center;
+            padding: 20px;
+            margin: 10px 0;
+            border-radius: 8px;
+            text-transform: uppercase;
+        }
+
+        .filter-status.go {
+            background: rgba(0, 255, 136, 0.15);
+            color: #00ff88;
+            border: 2px solid #00ff88;
+        }
+
+        .filter-status.no-go {
+            background: rgba(255, 68, 68, 0.15);
+            color: #ff4444;
+            border: 2px solid #ff4444;
+        }
+
+        .filter-market-data {
+            background: rgba(255, 255, 255, 0.03);
+            border-radius: 8px;
+            padding: 15px;
+            margin: 15px 0;
+        }
+
+        .filter-market-data h4 {
+            color: #00d4ff;
+            margin-bottom: 12px;
+            font-size: 14px;
+            text-transform: uppercase;
+        }
+
+        .market-data-row {
+            display: flex;
+            justify-content: space-between;
+            padding: 8px 0;
+            border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+        }
+
+        .market-data-row:last-child {
+            border-bottom: none;
+        }
+
+        .market-data-label {
+            color: #888;
+        }
+
+        .market-data-value {
+            font-family: monospace;
+            font-weight: bold;
+        }
+
+        .market-data-value.positive {
+            color: #00ff88;
+        }
+
+        .market-data-value.negative {
+            color: #ff4444;
+        }
+
+        .filter-rules {
+            margin: 15px 0;
+        }
+
+        .filter-rules h4 {
+            color: #00d4ff;
+            margin-bottom: 12px;
+            font-size: 14px;
+            text-transform: uppercase;
+        }
+
+        .rule-item {
+            display: flex;
+            align-items: center;
+            padding: 10px;
+            margin: 5px 0;
+            border-radius: 6px;
+            background: rgba(255, 255, 255, 0.03);
+        }
+
+        .rule-status-icon {
+            font-size: 20px;
+            margin-right: 12px;
+            width: 24px;
+            text-align: center;
+        }
+
+        .rule-status-icon.pass {
+            color: #00ff88;
+        }
+
+        .rule-status-icon.fail {
+            color: #ff4444;
+        }
+
+        .rule-status-icon.warn {
+            color: #ffaa00;
+        }
+
+        .rule-details {
+            flex: 1;
+        }
+
+        .rule-name {
+            font-weight: 600;
+            color: #e0e0e0;
+        }
+
+        .rule-value {
+            font-size: 13px;
+            color: #888;
+            margin-top: 2px;
+        }
+
+        .filter-strikes {
+            background: rgba(0, 212, 255, 0.1);
+            border: 1px solid rgba(0, 212, 255, 0.3);
+            border-radius: 8px;
+            padding: 15px;
+            margin: 15px 0;
+        }
+
+        .filter-strikes h4 {
+            color: #00d4ff;
+            margin-bottom: 12px;
+            font-size: 14px;
+            text-transform: uppercase;
+        }
+
+        .strikes-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 10px;
+        }
+
+        .strike-item {
+            text-align: center;
+            padding: 10px;
+            background: rgba(0, 0, 0, 0.3);
+            border-radius: 6px;
+        }
+
+        .strike-label {
+            font-size: 12px;
+            color: #888;
+            margin-bottom: 4px;
+        }
+
+        .strike-value {
+            font-size: 24px;
+            font-weight: bold;
+            color: #00d4ff;
+        }
+
+        .ic-structure {
+            margin-top: 15px;
+            padding: 12px;
+            background: rgba(0, 0, 0, 0.2);
+            border-radius: 6px;
+            font-family: monospace;
+            font-size: 13px;
+        }
+
+        .ic-structure-row {
+            display: flex;
+            justify-content: space-between;
+            padding: 4px 0;
+            color: #aaa;
+        }
+
+        .ic-structure-row span:last-child {
+            color: #00d4ff;
+            font-weight: bold;
+        }
     </style>
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 </head>
@@ -647,7 +831,18 @@
                 </div>
             </div>
         </div>
-        
+
+        <!-- FILTER RESULTS -->
+        <div class="card" id="filter-results-card" style="display: none;">
+            <h2>
+                <span>Trade Filter Results</span>
+                <button class="refresh-btn" onclick="document.getElementById('filter-results-card').style.display='none'">Close</button>
+            </h2>
+            <div id="filter-results-content">
+                <!-- Results will be populated here -->
+            </div>
+        </div>
+
         <!-- PORTFOLIO (Now at the top) -->
         <div class="card">
             <h2>
@@ -782,10 +977,9 @@
                     body: JSON.stringify({additional: additional})
                 });
                 const data = await response.json();
-                
+
                 if (data.success) {
-                    alert(`Trade filter executed!
-Result: ${data.result}`);
+                    displayFilterResults(data.result);
                     refreshAll();
                 } else {
                     alert('Error: ' + data.error);
@@ -794,6 +988,184 @@ Result: ${data.result}`);
                 console.error('Error running filter:', error);
                 alert('Failed to run trade filter');
             }
+        }
+
+        function displayFilterResults(result) {
+            const card = document.getElementById('filter-results-card');
+            const content = document.getElementById('filter-results-content');
+
+            const isGo = result.status === 'GO';
+            const statusClass = isGo ? 'go' : 'no-go';
+            const statusText = isGo ? '🟢 GO' : '🔴 NO GO';
+
+            // Build market data rows
+            let marketDataHtml = `
+                <div class="market-data-row">
+                    <span class="market-data-label">STOXX Current</span>
+                    <span class="market-data-value">€${result.market_data.stoxx_current.toFixed(2)}</span>
+                </div>
+                <div class="market-data-row">
+                    <span class="market-data-label">STOXX Open</span>
+                    <span class="market-data-value">€${result.market_data.stoxx_open.toFixed(2)}</span>
+                </div>
+            `;
+
+            if (result.market_data.vix !== undefined && result.market_data.vix !== null) {
+                const vixClass = result.market_data.vix > 22 ? 'negative' : '';
+                marketDataHtml += `
+                    <div class="market-data-row">
+                        <span class="market-data-label">VIX</span>
+                        <span class="market-data-value ${vixClass}">${result.market_data.vix.toFixed(2)}</span>
+                    </div>
+                `;
+            }
+
+            const changeClass = result.market_data.intraday_change >= 0 ? 'positive' : 'negative';
+            const changeSign = result.market_data.intraday_change >= 0 ? '+' : '';
+            marketDataHtml += `
+                <div class="market-data-row">
+                    <span class="market-data-label">Intraday Change</span>
+                    <span class="market-data-value ${changeClass}">${changeSign}${result.market_data.intraday_change.toFixed(2)}%</span>
+                </div>
+            `;
+
+            if (result.market_data.ma_20 !== undefined && result.market_data.ma_20 !== null) {
+                const maDeviation = ((result.market_data.stoxx_current - result.market_data.ma_20) / result.market_data.ma_20 * 100);
+                const maClass = maDeviation >= 0 ? 'positive' : 'negative';
+                const maSign = maDeviation >= 0 ? '+' : '';
+                marketDataHtml += `
+                    <div class="market-data-row">
+                        <span class="market-data-label">20 DMA</span>
+                        <span class="market-data-value">${result.market_data.ma_20.toFixed(2)} (${maSign}${maDeviation.toFixed(2)}%)</span>
+                    </div>
+                `;
+            }
+
+            // Build rules status
+            let rulesHtml = '';
+
+            // VIX Rule (warning only)
+            if (result.rules.vix_check.value !== undefined && result.rules.vix_check.value !== null) {
+                const vixRuleIcon = result.rules.vix_check.warning ? '⚠️' : '✅';
+                const vixRuleClass = result.rules.vix_check.warning ? 'warn' : 'pass';
+                rulesHtml += `
+                    <div class="rule-item">
+                        <div class="rule-status-icon ${vixRuleClass}">${vixRuleIcon}</div>
+                        <div class="rule-details">
+                            <div class="rule-name">VIX Check</div>
+                            <div class="rule-value">VIX: ${result.rules.vix_check.value} (threshold: ${result.rules.vix_check.threshold})</div>
+                        </div>
+                    </div>
+                `;
+            }
+
+            // Intraday Change Rule
+            const intradayIcon = result.rules.intraday_change.passed ? '✅' : '❌';
+            const intradayClass = result.rules.intraday_change.passed ? 'pass' : 'fail';
+            const intradaySign = result.rules.intraday_change.value >= 0 ? '+' : '';
+            rulesHtml += `
+                <div class="rule-item">
+                    <div class="rule-status-icon ${intradayClass}">${intradayIcon}</div>
+                    <div class="rule-details">
+                        <div class="rule-name">Intraday Change</div>
+                        <div class="rule-value">Change: ${intradaySign}${result.rules.intraday_change.value.toFixed(2)}% (max: ±${result.rules.intraday_change.threshold}%)</div>
+                    </div>
+                </div>
+            `;
+
+            // Economic Calendar Rule
+            if (result.rules.economic_calendar.error) {
+                rulesHtml += `
+                    <div class="rule-item">
+                        <div class="rule-status-icon warn">⚠️</div>
+                        <div class="rule-details">
+                            <div class="rule-name">Economic Calendar</div>
+                            <div class="rule-value">${result.rules.economic_calendar.error}</div>
+                        </div>
+                    </div>
+                `;
+            } else if (result.rules.economic_calendar.passed === false) {
+                const events = result.rules.economic_calendar.events.map(e => e.name).join(', ');
+                rulesHtml += `
+                    <div class="rule-item">
+                        <div class="rule-status-icon fail">❌</div>
+                        <div class="rule-details">
+                            <div class="rule-name">Economic Calendar</div>
+                            <div class="rule-value">High-impact events: ${events}</div>
+                        </div>
+                    </div>
+                `;
+            } else {
+                rulesHtml += `
+                    <div class="rule-item">
+                        <div class="rule-status-icon pass">✅</div>
+                        <div class="rule-details">
+                            <div class="rule-name">Economic Calendar</div>
+                            <div class="rule-value">No high-impact EUR events today</div>
+                        </div>
+                    </div>
+                `;
+            }
+
+            // Build strikes section (only if GO)
+            let strikesHtml = '';
+            if (isGo && result.strikes.call_strike && result.strikes.put_strike) {
+                const wingWidth = result.strikes.wing_width || 50;
+                strikesHtml = `
+                    <div class="filter-strikes">
+                        <h4>🎯 Recommended Iron Condor</h4>
+                        <div class="strikes-grid">
+                            <div class="strike-item">
+                                <div class="strike-label">Short Put</div>
+                                <div class="strike-value">${result.strikes.put_strike}</div>
+                            </div>
+                            <div class="strike-item">
+                                <div class="strike-label">Short Call</div>
+                                <div class="strike-value">${result.strikes.call_strike}</div>
+                            </div>
+                        </div>
+                        <div class="ic-structure">
+                            <div class="ic-structure-row">
+                                <span>Buy Put</span>
+                                <span>${result.strikes.put_strike - wingWidth}</span>
+                            </div>
+                            <div class="ic-structure-row">
+                                <span>Sell Put</span>
+                                <span>${result.strikes.put_strike}</span>
+                            </div>
+                            <div class="ic-structure-row">
+                                <span>Sell Call</span>
+                                <span>${result.strikes.call_strike}</span>
+                            </div>
+                            <div class="ic-structure-row">
+                                <span>Buy Call</span>
+                                <span>${result.strikes.call_strike + wingWidth}</span>
+                            </div>
+                        </div>
+                    </div>
+                `;
+            }
+
+            content.innerHTML = `
+                <div class="filter-results">
+                    <div class="filter-status ${statusClass}">${statusText}</div>
+
+                    <div class="filter-market-data">
+                        <h4>📊 Market Data</h4>
+                        ${marketDataHtml}
+                    </div>
+
+                    <div class="filter-rules">
+                        <h4>✓ Rule Evaluation</h4>
+                        ${rulesHtml}
+                    </div>
+
+                    ${strikesHtml}
+                </div>
+            `;
+
+            card.style.display = 'block';
+            card.scrollIntoView({ behavior: 'smooth', block: 'start' });
         }
         
         async function startDaemon() {

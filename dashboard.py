@@ -146,19 +146,65 @@ def api_portfolio():
 
 @app.route('/api/run-once', methods=['POST'])
 def api_run_once():
-    """Run trade filter once."""
+    """Run trade filter once and return structured results."""
     try:
-        from trade_filter import load_config, evaluate_trade
+        from trade_filter import load_config, evaluate_trade, get_market_data
+        from trade_filter import calculate_intraday_change, check_economic_calendar
 
         config = load_config()
         use_additional = request.json.get('additional', False) if request.json else False
 
-        # Run evaluation
-        result = evaluate_trade(config, use_additional_filters=use_additional)
+        # Run evaluation with track_portfolio to get full results
+        result = evaluate_trade(config, use_additional_filters=use_additional, track_portfolio=True)
+
+        # Get market data and calendar for detailed response
+        data = get_market_data(include_history=use_additional)
+        intraday_change = calculate_intraday_change(data['stoxx_current'], data['stoxx_open'])
+        calendar = check_economic_calendar(config)
+
+        # Determine which rules passed/failed
+        vix_warn = config['rules'].get('vix_warn', 22)
+        intraday_max = config['rules']['intraday_change_max']
+
+        rules_status = {
+            'vix_check': {
+                'passed': True,
+                'value': float(data.get('vix')) if data.get('vix') is not None else None,
+                'threshold': float(vix_warn),
+                'warning': bool(data.get('vix', 0) > vix_warn) if 'vix' in data else False
+            },
+            'intraday_change': {
+                'passed': bool(abs(intraday_change) <= intraday_max),
+                'value': float(intraday_change),
+                'threshold': float(intraday_max)
+            },
+            'economic_calendar': {
+                'passed': bool(not calendar['has_high_impact']) if not calendar['error'] else None,
+                'events': calendar.get('events', []),
+                'error': calendar.get('error')
+            }
+        }
 
         return jsonify({
             'success': True,
-            'result': result,
+            'result': {
+                'status': result['status'] if result else 'ERROR',
+                'market_data': {
+                    'vix': data.get('vix'),
+                    'stoxx_current': data['stoxx_current'],
+                    'stoxx_open': data['stoxx_open'],
+                    'intraday_change': intraday_change,
+                    'ma_20': data.get('ma_20') if use_additional else None,
+                    'prev_range_pct': data.get('prev_range_pct') if use_additional else None
+                },
+                'rules': rules_status,
+                'strikes': {
+                    'call_strike': result.get('call_strike') if result else None,
+                    'put_strike': result.get('put_strike') if result else None,
+                    'wing_width': result.get('wing_width') if result else None
+                },
+                'additional_filters': use_additional
+            },
             'timestamp': datetime.now().isoformat()
         })
     except Exception as e:
