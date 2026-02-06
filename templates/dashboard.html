@@ -601,59 +601,8 @@
             color: #888;
             font-style: italic;
         }
-        
-        .chart-section {
-            margin-top: 30px;
-            background: #1a1a1a;
-            border-radius: 8px;
-            padding: 20px;
-            border: 1px solid #2a2a2a;
-        }
-        
-        .chart-section h3 {
-            color: #00d4ff;
-            font-size: 18px;
-            margin-bottom: 15px;
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-        }
-        
-        .chart-container {
-            position: relative;
-            height: 400px;
-            width: 100%;
-        }
-        
-        .chart-legend {
-            display: flex;
-            justify-content: center;
-            gap: 20px;
-            margin-top: 10px;
-            font-size: 14px;
-        }
-        
-        .legend-item {
-            display: flex;
-            align-items: center;
-            gap: 5px;
-        }
-        
-        .legend-color {
-            width: 20px;
-            height: 3px;
-            border-radius: 2px;
-        }
-        
-        .legend-color.always {
-            background: #00ff88;
-        }
-        
-        .legend-color.filtered {
-            background: #00d4ff;
-        }
     </style>
-    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 </head>
 <body>
     <div class="header">
@@ -707,6 +656,14 @@
             </h2>
             <div id="portfolio-content">
                 <p class="loading">Loading portfolio data...</p>
+            </div>
+        </div>
+
+        <!-- P&L CHART -->
+        <div class="card">
+            <h2>P&L History Chart</h2>
+            <div style="position: relative; height: 300px; width: 100%;">
+                <canvas id="pnl-chart"></canvas>
             </div>
         </div>
         
@@ -1178,29 +1135,115 @@ Result: ${data.result}`);
                           'No difference yet'}
                     </p>
                 </div>
-                
-                <div class="chart-section">
-                    <h3>
-                        Cumulative P&L Over Time
-                        <span style="font-size: 12px; color: #888; font-weight: normal;">Real-time updates</span>
-                    </h3>
-                    <div class="chart-container">
-                        <canvas id="pnlChart"></canvas>
-                    </div>
-                    <div class="chart-legend">
-                        <div class="legend-item">
-                            <div class="legend-color always"></div>
-                            <span>Always Trade</span>
-                        </div>
-                        <div class="legend-item">
-                            <div class="legend-color filtered"></div>
-                            <span>Filtered (GO Only)</span>
-                        </div>
-                    </div>
-                </div>
             `;
+
+            // Update P&L chart
+            updatePnlChart(alwaysTrade.history || [], filtered.history || []);
         }
-        
+
+        let pnlChart = null;
+
+        function updatePnlChart(alwaysHistory, filteredHistory) {
+            const ctx = document.getElementById('pnl-chart');
+            if (!ctx) return;
+
+            // Calculate cumulative P&L for each portfolio
+            function calcCumulative(history) {
+                if (!history || history.length === 0) return { dates: [], values: [] };
+                const sorted = [...history].sort((a, b) => (a.date || '').localeCompare(b.date || ''));
+                let cumulative = 0;
+                return {
+                    dates: sorted.map(t => t.date || ''),
+                    values: sorted.map(t => { cumulative += (t.pnl || 0); return cumulative; })
+                };
+            }
+
+            const alwaysData = calcCumulative(alwaysHistory);
+            const filteredData = calcCumulative(filteredHistory);
+
+            // Merge dates for consistent x-axis
+            const allDates = [...new Set([...alwaysData.dates, ...filteredData.dates])].sort();
+
+            if (allDates.length === 0) {
+                if (pnlChart) {
+                    pnlChart.destroy();
+                    pnlChart = null;
+                }
+                return;
+            }
+
+            // Map cumulative values to merged dates
+            function mapToAllDates(data) {
+                let lastVal = 0;
+                return allDates.map(date => {
+                    const idx = data.dates.indexOf(date);
+                    if (idx !== -1) {
+                        lastVal = data.values[idx];
+                    }
+                    return lastVal;
+                });
+            }
+
+            const alwaysValues = mapToAllDates(alwaysData);
+            const filteredValues = mapToAllDates(filteredData);
+
+            if (pnlChart) {
+                pnlChart.destroy();
+            }
+
+            pnlChart = new Chart(ctx, {
+                type: 'line',
+                data: {
+                    labels: allDates,
+                    datasets: [
+                        {
+                            label: 'Always Trade',
+                            data: alwaysValues,
+                            borderColor: '#00d4ff',
+                            backgroundColor: 'rgba(0, 212, 255, 0.1)',
+                            tension: 0.3,
+                            fill: false
+                        },
+                        {
+                            label: 'Filtered',
+                            data: filteredValues,
+                            borderColor: '#00ff88',
+                            backgroundColor: 'rgba(0, 255, 136, 0.1)',
+                            tension: 0.3,
+                            fill: false
+                        }
+                    ]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    scales: {
+                        y: {
+                            ticks: { color: '#888' },
+                            grid: { color: '#333' },
+                            title: { display: true, text: 'Cumulative P&L (€)', color: '#888' }
+                        },
+                        x: {
+                            ticks: { color: '#888', maxRotation: 45 },
+                            grid: { color: '#333' }
+                        }
+                    },
+                    plugins: {
+                        legend: {
+                            labels: { color: '#e0e0e0' }
+                        },
+                        tooltip: {
+                            callbacks: {
+                                label: function(context) {
+                                    return context.dataset.label + ': €' + context.parsed.y.toFixed(2);
+                                }
+                            }
+                        }
+                    }
+                }
+            });
+        }
+
         function renderTradeHistory(history) {
             if (!history || history.length === 0) {
                 return '<p style="color: #666; font-size: 12px; text-align: center; padding: 10px;">No trades yet</p>';
@@ -1260,7 +1303,6 @@ Result: ${data.result}`);
             fetchStatus();
             fetchHistory();
             fetchPortfolio();
-            loadPnlChart();
             checkDaemonStatus();
         }
         
@@ -1274,7 +1316,6 @@ Result: ${data.result}`);
         
         function refreshPortfolio() {
             fetchPortfolio();
-            loadPnlChart();
         }
         
         let useKelly = false;
@@ -1375,131 +1416,6 @@ Result: ${data.result}`);
                 refreshAll();
             }
         }, refreshInterval);
-        
-        // P&L CHART
-        let pnlChart = null;
-        
-        async function loadPnlChart() {
-            try {
-                const response = await fetch('/api/portfolio/pnl-chart');
-                const data = await response.json();
-                
-                if (!data.success || !data.data) {
-                    console.error('Error loading P&L chart data:', data.error);
-                    return;
-                }
-                
-                renderPnlChart(data.data);
-            } catch (error) {
-                console.error('Error fetching P&L chart data:', error);
-            }
-        }
-        
-        function renderPnlChart(chartData) {
-            const ctx = document.getElementById('pnlChart').getContext('2d');
-            
-            // Get dates from always_trade or filtered (they should match)
-            const labels = chartData.always_trade?.dates || chartData.filtered?.dates || [];
-            
-            // Prepare datasets
-            const datasets = [];
-            
-            if (chartData.always_trade && chartData.always_trade.cumulative.length > 0) {
-                datasets.push({
-                    label: 'Always Trade',
-                    data: chartData.always_trade.cumulative,
-                    borderColor: '#00ff88',
-                    backgroundColor: 'rgba(0, 255, 136, 0.1)',
-                    borderWidth: 2,
-                    tension: 0.1,
-                    fill: true,
-                    pointRadius: 3,
-                    pointHoverRadius: 6
-                });
-            }
-            
-            if (chartData.filtered && chartData.filtered.cumulative.length > 0) {
-                datasets.push({
-                    label: 'Filtered (GO Only)',
-                    data: chartData.filtered.cumulative,
-                    borderColor: '#00d4ff',
-                    backgroundColor: 'rgba(0, 212, 255, 0.1)',
-                    borderWidth: 2,
-                    tension: 0.1,
-                    fill: true,
-                    pointRadius: 3,
-                    pointHoverRadius: 6
-                });
-            }
-            
-            // Destroy existing chart if it exists
-            if (pnlChart) {
-                pnlChart.destroy();
-            }
-            
-            // Create new chart
-            pnlChart = new Chart(ctx, {
-                type: 'line',
-                data: {
-                    labels: labels,
-                    datasets: datasets
-                },
-                options: {
-                    responsive: true,
-                    maintainAspectRatio: false,
-                    interaction: {
-                        intersect: false,
-                        mode: 'index'
-                    },
-                    plugins: {
-                        legend: {
-                            display: false // We have custom legend
-                        },
-                        tooltip: {
-                            backgroundColor: 'rgba(0, 0, 0, 0.8)',
-                            titleColor: '#00d4ff',
-                            bodyColor: '#e0e0e0',
-                            borderColor: '#0f3460',
-                            borderWidth: 1,
-                            callbacks: {
-                                label: function(context) {
-                                    let label = context.dataset.label || '';
-                                    if (label) {
-                                        label += ': ';
-                                    }
-                                    if (context.parsed.y !== null) {
-                                        label += '€' + context.parsed.y.toFixed(2);
-                                    }
-                                    return label;
-                                }
-                            }
-                        }
-                    },
-                    scales: {
-                        x: {
-                            grid: {
-                                color: 'rgba(255, 255, 255, 0.05)'
-                            },
-                            ticks: {
-                                color: '#888',
-                                maxTicksLimit: 10
-                            }
-                        },
-                        y: {
-                            grid: {
-                                color: 'rgba(255, 255, 255, 0.05)'
-                            },
-                            ticks: {
-                                color: '#888',
-                                callback: function(value) {
-                                    return '€' + value.toFixed(0);
-                                }
-                            }
-                        }
-                    }
-                }
-            });
-        }
         
         // INITIAL LOAD
         document.addEventListener('DOMContentLoaded', () => {

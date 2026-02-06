@@ -1066,6 +1066,7 @@ DASHBOARD_HTML = '''
             font-style: italic;
         }
     </style>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 </head>
 <body>
     <div class="header">
@@ -1119,6 +1120,14 @@ DASHBOARD_HTML = '''
             </h2>
             <div id="portfolio-content">
                 <p class="loading">Loading portfolio data...</p>
+            </div>
+        </div>
+
+        <!-- P&L CHART -->
+        <div class="card">
+            <h2>P&L History Chart</h2>
+            <div style="position: relative; height: 300px; width: 100%;">
+                <canvas id="pnl-chart"></canvas>
             </div>
         </div>
         
@@ -1590,8 +1599,114 @@ DASHBOARD_HTML = '''
                     </p>
                 </div>
             `;
+
+            // Update P&L chart
+            updatePnlChart(alwaysTrade.history || [], filtered.history || []);
         }
-        
+
+        let pnlChart = null;
+
+        function updatePnlChart(alwaysHistory, filteredHistory) {
+            const ctx = document.getElementById('pnl-chart');
+            if (!ctx) return;
+
+            // Calculate cumulative P&L for each portfolio
+            function calcCumulative(history) {
+                if (!history || history.length === 0) return { dates: [], values: [] };
+                const sorted = [...history].sort((a, b) => (a.date || '').localeCompare(b.date || ''));
+                let cumulative = 0;
+                return {
+                    dates: sorted.map(t => t.date || ''),
+                    values: sorted.map(t => { cumulative += (t.pnl || 0); return cumulative; })
+                };
+            }
+
+            const alwaysData = calcCumulative(alwaysHistory);
+            const filteredData = calcCumulative(filteredHistory);
+
+            // Merge dates for consistent x-axis
+            const allDates = [...new Set([...alwaysData.dates, ...filteredData.dates])].sort();
+
+            if (allDates.length === 0) {
+                if (pnlChart) {
+                    pnlChart.destroy();
+                    pnlChart = null;
+                }
+                return;
+            }
+
+            // Map cumulative values to merged dates
+            function mapToAllDates(data) {
+                let lastVal = 0;
+                return allDates.map(date => {
+                    const idx = data.dates.indexOf(date);
+                    if (idx !== -1) {
+                        lastVal = data.values[idx];
+                    }
+                    return lastVal;
+                });
+            }
+
+            const alwaysValues = mapToAllDates(alwaysData);
+            const filteredValues = mapToAllDates(filteredData);
+
+            if (pnlChart) {
+                pnlChart.destroy();
+            }
+
+            pnlChart = new Chart(ctx, {
+                type: 'line',
+                data: {
+                    labels: allDates,
+                    datasets: [
+                        {
+                            label: 'Always Trade',
+                            data: alwaysValues,
+                            borderColor: '#00d4ff',
+                            backgroundColor: 'rgba(0, 212, 255, 0.1)',
+                            tension: 0.3,
+                            fill: false
+                        },
+                        {
+                            label: 'Filtered',
+                            data: filteredValues,
+                            borderColor: '#00ff88',
+                            backgroundColor: 'rgba(0, 255, 136, 0.1)',
+                            tension: 0.3,
+                            fill: false
+                        }
+                    ]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    scales: {
+                        y: {
+                            ticks: { color: '#888' },
+                            grid: { color: '#333' },
+                            title: { display: true, text: 'Cumulative P&L (€)', color: '#888' }
+                        },
+                        x: {
+                            ticks: { color: '#888', maxRotation: 45 },
+                            grid: { color: '#333' }
+                        }
+                    },
+                    plugins: {
+                        legend: {
+                            labels: { color: '#e0e0e0' }
+                        },
+                        tooltip: {
+                            callbacks: {
+                                label: function(context) {
+                                    return context.dataset.label + ': €' + context.parsed.y.toFixed(2);
+                                }
+                            }
+                        }
+                    }
+                }
+            });
+        }
+
         function renderTradeHistory(history) {
             if (!history || history.length === 0) {
                 return '<p style="color: #666; font-size: 12px; text-align: center; padding: 10px;">No trades yet</p>';

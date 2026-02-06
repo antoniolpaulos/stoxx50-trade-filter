@@ -532,15 +532,15 @@ python3 backtest.py --start 2024-01-01 --end 2024-12-31
 - Trade filter with GO/NO-GO signals
 - Shadow portfolio with Filter Edge tracking
 - Position sizing calculator with Kelly criterion
-- Real-time monitoring dashboard
-- **Telegram bot with 6 commands** (NEW)
+- Real-time monitoring dashboard with P&L charts (Chart.js)
+- **Telegram bot with 8 commands** (`/status`, `/portfolio`, `/history`, `/analytics`, `/alerts`, `/backtest`, `/help`, `/start`)
 - Systemd service for persistent bot operation
 - All integrated and tested
 
 **Completed This Session (2026-02-06):**
 
-1. ✅ **Telegram Bot Implemented** (`telegram_bot.py` - 857 lines)
-   - Commands: `/start`, `/help`, `/status`, `/portfolio`, `/history`, `/analytics`
+1. ✅ **Telegram Bot Implemented** (`telegram_bot.py` - 950+ lines)
+   - Commands: `/start`, `/help`, `/status`, `/portfolio`, `/history`, `/analytics`, `/alerts`, `/backtest`
    - Rate limiting (configurable, disabled for user)
    - User whitelisting support
    - Inline keyboards for navigation
@@ -557,22 +557,25 @@ python3 backtest.py --start 2024-01-01 --end 2024-12-31
      ```
    - Auto-restart on failure (10s delay)
 
-3. ✅ **Backtest Optimizer Plan Created**
+3. ✅ **Dashboard P&L Charts** (Chart.js)
+   - Cumulative P&L line chart comparing Always Trade vs Filtered
+   - Dark theme styling matching dashboard
+   - Auto-updates on portfolio refresh
+   - Uses `/api/portfolio/pnl-chart` endpoint
+
+4. ✅ **Additional Telegram Commands**
+   - `/alerts [on|off]` - Toggle real-time alerts per user
+   - `/backtest [days]` - Run historical backtest (max 365 days)
+
+5. ✅ **Backtest Optimizer Plan Created**
    - Full plan: `docs/backtest_optimizer_plan.md`
    - Grid search over 4 parameters (OTM%, wing width, intraday threshold, credit)
    - Walk-forward validation to prevent overfitting
    - Ranks by out-of-sample Sortino ratio
    - Multiprocessing for speed
 
-**ON HOLD (Not Yet Implemented):**
-- Dashboard P&L charts with Chart.js
-- `/alerts` command (toggle per-user alerts)
-- `/backtest` command (run backtest from Telegram)
-
 **Next Priorities:**
-1. **Backtest Optimizer** (`optimize.py`) - plan ready at `docs/backtest_optimizer_plan.md`
-2. Dashboard charts (Chart.js P&L visualization)
-3. Additional Telegram commands (`/alerts`, `/backtest`)
+1. **Backtest Optimizer** (`optimize.py`) - implement following `docs/backtest_optimizer_plan.md`
 
 ---
 
@@ -604,9 +607,9 @@ For detailed session-by-session information, refer to:
 
 ---
 
-**Status:** Telegram bot implemented, optimizer plan created
+**Status:** Feature-complete with Telegram bot (8 commands), dashboard P&L charts, optimizer plan ready
 **Last Commit:** Check `git log -1` for latest
-**Tests:** 249+ tests passing ✅ (35 new telegram_bot tests)
+**Tests:** 249+ tests passing ✅ (35 telegram_bot tests)
 **Branch:** `opencode-tests`
 
 **Immediate Next Step:** Implement `optimize.py` following `docs/backtest_optimizer_plan.md`
