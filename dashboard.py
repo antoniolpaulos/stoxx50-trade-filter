@@ -305,6 +305,58 @@ def api_risk_metrics():
         return jsonify({'success': False, 'error': str(e)}), 500
 
 
+@app.route('/api/portfolio/pnl-chart')
+def api_pnl_chart():
+    """Get cumulative P&L data for charting."""
+    try:
+        portfolio_data = load_portfolio()
+        portfolios = portfolio_data.get('portfolios', {})
+        
+        result = {}
+        
+        for name in ['always_trade', 'filtered']:
+            if name not in portfolios:
+                continue
+                
+            portfolio = portfolios[name]
+            history = portfolio.get('history', [])
+            
+            if not history:
+                result[name] = {'dates': [], 'pnl': [], 'cumulative': []}
+                continue
+            
+            # Sort by date
+            sorted_history = sorted(history, key=lambda x: x.get('date', ''))
+            
+            dates = []
+            daily_pnl = []
+            cumulative = []
+            running_total = 0.0
+            
+            for trade in sorted_history:
+                trade_date = trade.get('date', '')
+                pnl = trade.get('pnl', 0.0)
+                
+                dates.append(trade_date)
+                daily_pnl.append(pnl)
+                running_total += pnl
+                cumulative.append(running_total)
+            
+            result[name] = {
+                'dates': dates,
+                'daily_pnl': daily_pnl,
+                'cumulative': cumulative
+            }
+        
+        return jsonify({
+            'success': True,
+            'data': result
+        })
+    except Exception as e:
+        logger.error(f"Error loading P&L chart data: {e}")
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+
 @app.route('/api/status/brief')
 def api_status_brief():
     """Get brief status for Telegram bot and other integrations."""
