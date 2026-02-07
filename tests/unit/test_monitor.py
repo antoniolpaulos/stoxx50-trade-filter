@@ -397,14 +397,18 @@ class TestIntegration:
     @patch('monitor._get_market_data')
     def test_full_monitoring_cycle(self, mock_get_data):
         """Test complete monitoring cycle."""
-        mock_get_data.return_value = {
-            'stoxx_current': 5180.0,
-            'stoxx_open': 5170.0,
-            'vix': 18.5
-        }
-
         config = {'rules': {'vix_warn': 22, 'intraday_change_max': 1.0}}
         monitor = TradeMonitor(config, check_interval=1)
+
+        def stop_after_first_call(*args, **kwargs):
+            monitor.running = False
+            return {
+                'stoxx_current': 5180.0,
+                'stoxx_open': 5170.0,
+                'vix': 18.5
+            }
+
+        mock_get_data.side_effect = stop_after_first_call
 
         callback_count = 0
         def callback(changes):
@@ -413,7 +417,7 @@ class TestIntegration:
 
         monitor.add_callback(callback)
 
-        # Start and immediately stop (for testing)
+        # Start loop — will exit after first check
         monitor.running = True
         monitor._monitor_loop()
 

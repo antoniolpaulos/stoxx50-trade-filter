@@ -73,7 +73,7 @@ class TestIBKRProviderInit:
         provider = IBKRProvider()
 
         assert provider.host == '127.0.0.1'
-        assert provider.port == 7497
+        assert provider.port == 7496
         assert provider.client_id == 1
         assert provider.timeout == 10
         assert provider._connected is False
@@ -95,7 +95,7 @@ class TestIBKRProviderInit:
     def test_contract_specs(self):
         """Test contract specifications."""
         assert IBKRProvider.SYMBOL == 'ESTX50'
-        assert IBKRProvider.EXCHANGE == 'DTB'
+        assert IBKRProvider.EXCHANGE == 'EUREX'
         assert IBKRProvider.CURRENCY == 'EUR'
         assert IBKRProvider.MULTIPLIER == 10
 
@@ -203,14 +203,16 @@ class TestStrikeCalculation:
 class TestGetRealCredit:
     """Test the get_real_credit helper function."""
 
-    def test_get_real_credit_disabled(self, disabled_config):
+    @patch('ibkr_provider._try_yahoo_fallback', return_value=(None, 'config'))
+    def test_get_real_credit_disabled(self, mock_yahoo, disabled_config):
         """Test fallback when IBKR disabled in config."""
         credit, source = get_real_credit(disabled_config, 6000)
 
         assert credit == 2.50
         assert source == 'config'
 
-    def test_get_real_credit_no_config(self):
+    @patch('ibkr_provider._try_yahoo_fallback', return_value=(None, 'config'))
+    def test_get_real_credit_no_config(self, mock_yahoo):
         """Test with empty config."""
         config = {}
         credit, source = get_real_credit(config, 6000)
@@ -218,7 +220,8 @@ class TestGetRealCredit:
         assert credit == 2.50  # Default fallback
         assert source == 'config'
 
-    def test_get_real_credit_custom_fallback(self):
+    @patch('ibkr_provider._try_yahoo_fallback', return_value=(None, 'config'))
+    def test_get_real_credit_custom_fallback(self, mock_yahoo):
         """Test with custom fallback credit."""
         config = {
             'ibkr': {'enabled': False},
@@ -229,8 +232,9 @@ class TestGetRealCredit:
         assert credit == 5.00
         assert source == 'config'
 
+    @patch('ibkr_provider._try_yahoo_fallback', return_value=(None, 'config'))
     @patch('ibkr_provider.IBKRProvider')
-    def test_get_real_credit_connection_failure(self, mock_provider_class, sample_config):
+    def test_get_real_credit_connection_failure(self, mock_provider_class, mock_yahoo, sample_config):
         """Test fallback when connection fails."""
         mock_provider = Mock()
         mock_provider.connect.return_value = False
@@ -261,8 +265,9 @@ class TestGetRealCredit:
         assert source == 'ibkr'
         mock_provider.disconnect.assert_called_once()
 
+    @patch('ibkr_provider._try_yahoo_fallback', return_value=(None, 'config'))
     @patch('ibkr_provider.IBKRProvider')
-    def test_get_real_credit_no_result(self, mock_provider_class, sample_config):
+    def test_get_real_credit_no_result(self, mock_provider_class, mock_yahoo, sample_config):
         """Test fallback when IC credit returns None."""
         mock_provider = Mock()
         mock_provider.connect.return_value = True
@@ -275,8 +280,9 @@ class TestGetRealCredit:
         assert credit == 2.50
         assert source == 'config'
 
+    @patch('ibkr_provider._try_yahoo_fallback', return_value=(None, 'config'))
     @patch('ibkr_provider.IBKRProvider')
-    def test_get_real_credit_exception(self, mock_provider_class, sample_config):
+    def test_get_real_credit_exception(self, mock_provider_class, mock_yahoo, sample_config):
         """Test fallback when exception occurs."""
         mock_provider = Mock()
         mock_provider.connect.return_value = True
@@ -295,8 +301,13 @@ class TestMockUtil:
 
     def test_isnan_with_none(self):
         """Test isNan with None value."""
-        from ibkr_provider import util
-        assert util.isNan(None) is True
+        from ibkr_provider import util, IBKR_AVAILABLE
+        if IBKR_AVAILABLE:
+            # Real ib_insync util.isNan(None) returns False
+            assert util.isNan(None) is False
+        else:
+            # Mock util treats None as NaN
+            assert util.isNan(None) is True
 
     def test_isnan_with_nan(self):
         """Test isNan with NaN value."""
