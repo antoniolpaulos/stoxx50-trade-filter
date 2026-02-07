@@ -35,13 +35,13 @@ Fallback chain for iron condor credit:
 
 | Priority | Source | Requirement |
 |----------|--------|-------------|
-| 1 | IBKR TWS | TWS running on port 7496 |
+| 1 | IBKR Gateway | IB Gateway on port 4001 (or TWS on 7496) |
 | 2 | Yahoo VSTOXX | None (free, uses V2TX.DE) |
 | 3 | Config | None (fixed €2.50 default) |
 
 ```bash
-# Test IBKR connection (requires TWS running)
-python -c "from ibkr_provider import IBKRProvider; p = IBKRProvider(); p.connect() and print(p.get_index_price())"
+# Test IBKR connection (requires Gateway or TWS running)
+python -c "from ibkr_provider import IBKRProvider; p = IBKRProvider(port=4001); p.connect() and print(p.get_index_price())"
 
 # Test Yahoo fallback
 python yahoo_options.py
@@ -50,8 +50,9 @@ python yahoo_options.py
 **IBKR Setup Notes:**
 - Contract: conId=4356500, exchange=EUREX (not DTB)
 - Delayed data enabled as fallback
-- IBC/IB Gateway headless setup incomplete (folder structure mismatch with standalone installer)
-- For now: keep TWS open during market hours, or rely on Yahoo fallback
+- IB Gateway 10.37 at `~/ibgateway/`, managed by IBC 3.23.0 at `~/ibc/`
+- Start: `~/ibc/gatewaystart.sh -inline` (approve 2FA on IBKR mobile app)
+- API port: 4001 (Gateway live), 7496 (TWS live)
 
 ## Quick Commands
 
@@ -84,7 +85,7 @@ python telegram_bot.py --webhook-url https://your-domain/telegram/webhook
 
 ## Test Status
 
-304 tests (run with `pytest tests/ -v`)
+357 tests (run with `./venv/bin/pytest tests/ -v`)
 
 ## Key Files
 
@@ -111,10 +112,11 @@ python telegram_bot.py --webhook-url https://your-domain/telegram/webhook
 ## Current State
 
 - Feature-complete with dashboard, monitoring, position sizing, Telegram bot
-- IBKR integration working (requires TWS running)
-- Yahoo VSTOXX fallback for credit estimation when TWS offline
+- IBKR integration working via IB Gateway (port 4001) or TWS (port 7496)
+- IBC automates Gateway login (just approve 2FA on mobile)
+- Yahoo VSTOXX fallback for credit estimation when Gateway/TWS offline
 - Dynamic credit backtest using historical volatility
-- 304+ tests passing
+- 357 tests passing (7 skipped — IBKR live tests need Gateway running)
 
 ## Branch Workflow
 
@@ -125,11 +127,10 @@ python telegram_bot.py --webhook-url https://your-domain/telegram/webhook
 ## Session Notes (2026-02-06)
 
 ### IBKR Integration
-- Implemented `ibkr_provider.py` with real option quotes from TWS
+- Implemented `ibkr_provider.py` with real option quotes via Gateway/TWS
 - Fixed contract spec: conId=4356500, exchange=EUREX, delayed data fallback
-- Works with TWS on port 7496 (live) or 7497 (paper)
-- **IBC/IB Gateway headless setup failed**: standalone installer creates different folder structure than IBC expects; would need "offline" installer
-- Workaround: keep TWS open during market hours
+- IB Gateway 10.37 + IBC 3.23.0 working (standalone installer + symlinks in `~/Jts/ibgateway/1037/`)
+- Ports: 4001 (Gateway live), 4002 (Gateway paper), 7496 (TWS live), 7497 (TWS paper)
 
 ### Yahoo Finance Fallback
 - `yahoo_options.py` uses VSTOXX (V2TX.DE) for implied volatility
@@ -146,5 +147,5 @@ python telegram_bot.py --webhook-url https://your-domain/telegram/webhook
 - `scripts/setup_ibeam.sh` - IBeAM setup (wrong API, doesn't work with ib_insync)
 
 ### TODO
-- [ ] Revisit IBC with offline IB Gateway installer
 - [ ] Add historical VSTOXX data source for backtest (V2TX.DE has no history)
+- [ ] Optionally run Gateway on Xvfb for truly hidden window

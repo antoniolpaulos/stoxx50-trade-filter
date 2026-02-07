@@ -20,3 +20,9 @@ portfolio:
 logging:
   file: trade_filter.log
   level: INFO
+ibkr:
+  enabled: true
+  host: 127.0.0.1
+  port: 4001
+  client_id: 1
+  timeout: 10
