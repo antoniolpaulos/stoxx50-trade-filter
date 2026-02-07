@@ -13,7 +13,6 @@ from data_provider import (
     DataProvider,
     YahooFinanceProvider,
     AlphaVantageProvider,
-    DataProviderPool,
     get_market_data
 )
 
@@ -118,58 +117,10 @@ class TestAlphaVantageProvider:
             provider.get_market_data()
 
 
-class TestDataProviderPool:
-    """Tests for DataProviderPool."""
-
-    @patch('data_provider.YahooFinanceProvider')
-    @patch('data_provider.AlphaVantageProvider')
-    def test_pool_with_providers(self, mock_av_class, mock_yf_class):
-        mock_yf = Mock()
-        mock_yf.is_available = True
-        mock_yf_class.return_value = mock_yf
-
-        mock_av = Mock()
-        mock_av.is_available = True
-        mock_av_class.return_value = mock_av
-
-        pool = DataProviderPool()
-        assert len(pool.providers) >= 1
-
-    def test_get_best_provider(self):
-        provider = YahooFinanceProvider()
-        pool = DataProviderPool()
-        pool._providers = [provider]
-
-        best = pool.get_best_provider()
-        assert best is not None
-
-    @patch('data_provider.YahooFinanceProvider')
-    @patch('data_provider.AlphaVantageProvider')
-    def test_get_all_providers_status(self, mock_av_class, mock_yf_class):
-        mock_yf = Mock()
-        mock_yf.is_available = True
-        type(mock_yf).name = property(lambda self: "Yahoo Finance")
-        mock_yf_class.return_value = mock_yf
-
-        mock_av = Mock()
-        mock_av.is_available = False
-        type(mock_av).name = property(lambda self: "Alpha Vantage")
-        mock_av_class.return_value = mock_av
-
-        pool = DataProviderPool()
-        pool._providers = [mock_yf, mock_av]
-        status = pool.get_all_providers_status()
-
-        assert len(status) == 2
-        assert status[0]["name"] == "Yahoo Finance"
-        assert status[0]["available"] is True
-
-
 class TestGetMarketDataFunction:
-    """Tests for the convenience function."""
+    """Tests for the get_market_data convenience function."""
 
-    @patch('data_provider.DataProviderPool')
-    def test_get_market_data_with_provider(self, mock_pool_class):
+    def test_get_market_data_with_provider(self):
         mock_provider = Mock()
         mock_data = MarketData(
             stoxx_current=5000.0,
@@ -177,28 +128,53 @@ class TestGetMarketDataFunction:
             source="Test"
         )
         mock_provider.get_market_data.return_value = mock_data
-        mock_pool_class.return_value.get_market_data.return_value = mock_data
 
         result = get_market_data(provider=mock_provider)
 
         assert result.stoxx_current == 5000.0
 
-    @patch('data_provider.DataProviderPool')
-    def test_get_market_data_with_history(self, mock_pool_class):
+    @patch('data_provider.YahooFinanceProvider')
+    def test_get_market_data_yahoo_fallback(self, mock_yf_class):
         mock_data = MarketData(
             stoxx_current=5000.0,
             stoxx_open=4990.0,
             prev_close=4985.0,
             ma_20=4970.0,
-            source="Test"
+            source="Yahoo Finance"
         )
-        mock_pool = Mock()
-        mock_pool.get_market_data.return_value = mock_data
-        mock_pool_class.return_value = mock_pool
+        mock_yf_class.return_value.get_market_data.return_value = mock_data
 
         result = get_market_data(include_history=True)
 
         assert result.prev_close == 4985.0
+        assert result.source == "Yahoo Finance"
+
+    @patch('data_provider.AlphaVantageProvider')
+    @patch('data_provider.YahooFinanceProvider')
+    def test_get_market_data_alpha_vantage_fallback(self, mock_yf_class, mock_av_class):
+        from exceptions import MarketDataError
+        mock_yf_class.return_value.get_market_data.side_effect = MarketDataError("Yahoo failed")
+
+        mock_data = MarketData(
+            stoxx_current=5000.0,
+            stoxx_open=4990.0,
+            source="Alpha Vantage"
+        )
+        mock_av_class.return_value.get_market_data.return_value = mock_data
+
+        result = get_market_data()
+
+        assert result.source == "Alpha Vantage"
+
+    @patch('data_provider.AlphaVantageProvider')
+    @patch('data_provider.YahooFinanceProvider')
+    def test_get_market_data_all_fail(self, mock_yf_class, mock_av_class):
+        from exceptions import MarketDataError
+        mock_yf_class.return_value.get_market_data.side_effect = MarketDataError("Yahoo failed")
+        mock_av_class.return_value.get_market_data.side_effect = MarketDataError("AV failed")
+
+        with pytest.raises(MarketDataError):
+            get_market_data()
 
 
 class TestIntegration:

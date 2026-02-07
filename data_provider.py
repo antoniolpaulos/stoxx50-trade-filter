@@ -5,10 +5,11 @@ Provides unified interface for fetching market data from multiple sources.
 
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
-from typing import Optional, Dict, Any
+from typing import Optional, Dict, Any, Tuple
 import requests
 import yfinance as yf
-from datetime import datetime, date
+import pandas as pd
+from datetime import datetime, date, timedelta
 
 from exceptions import MarketDataError
 
@@ -285,62 +286,29 @@ class AlphaVantageProvider(DataProvider):
             return None
 
 
-class DataProviderPool:
-    """Pool of data providers with fallback support."""
+def get_historical_data(start_date: str, end_date: str) -> Tuple[pd.DataFrame, pd.DataFrame]:
+    """Fetch historical VIX and Euro Stoxx 50 data.
 
-    def __init__(self, api_key: Optional[str] = None):
-        self._providers: list[DataProvider] = []
-        self._init_providers(api_key)
+    Note: VSTOXX (V2TX.DE) is unavailable via yfinance, so we use VIX as a proxy.
+    VIX is used as a warning indicator only, not a blocking rule.
 
-    def _init_providers(self, api_key: Optional[str] = None):
-        yf_provider = YahooFinanceProvider()
-        if yf_provider.is_available:
-            self._providers.append(yf_provider)
+    Args:
+        start_date: Start date (YYYY-MM-DD)
+        end_date: End date (YYYY-MM-DD)
 
-        av_provider = AlphaVantageProvider(api_key)
-        if av_provider.is_available:
-            self._providers.append(av_provider)
+    Returns:
+        Tuple of (vix_data, stoxx_data) DataFrames
+    """
+    buffer_start = (datetime.strptime(start_date, '%Y-%m-%d') - timedelta(days=5)).strftime('%Y-%m-%d')
+    buffer_end = (datetime.strptime(end_date, '%Y-%m-%d') + timedelta(days=5)).strftime('%Y-%m-%d')
 
-    @property
-    def providers(self) -> list[DataProvider]:
-        return self._providers
+    vix = yf.Ticker("^VIX")
+    stoxx = yf.Ticker("^STOXX50E")
 
-    def get_best_provider(self) -> Optional[DataProvider]:
-        """Return first available provider (ordered by preference)."""
-        for provider in self._providers:
-            if provider.is_available:
-                return provider
-        return None
+    vix_data = vix.history(start=buffer_start, end=buffer_end)
+    stoxx_data = stoxx.history(start=buffer_start, end=buffer_end)
 
-    def get_market_data(self, include_history: bool = False) -> MarketData:
-        """Fetch market data using best available provider."""
-        errors = []
-
-        for provider in self._providers:
-            try:
-                if provider.is_available:
-                    data = provider.get_market_data(include_history)
-                    return data
-            except MarketDataError as e:
-                errors.append(f"{provider.name}: {e}")
-                continue
-
-        if self._providers:
-            raise MarketDataError(
-                f"All providers failed. Errors: {'; '.join(errors)}"
-            )
-        raise MarketDataError("No data providers available")
-
-    def get_all_providers_status(self) -> list[Dict[str, Any]]:
-        """Get status of all providers."""
-        return [
-            {
-                "name": p.name,
-                "available": p.is_available,
-                "priority": i
-            }
-            for i, p in enumerate(self._providers)
-        ]
+    return vix_data, stoxx_data
 
 
 def get_market_data(
@@ -348,11 +316,11 @@ def get_market_data(
     provider: Optional[DataProvider] = None,
     api_key: Optional[str] = None
 ) -> MarketData:
-    """Convenience function to fetch market data.
+    """Fetch market data, trying Yahoo Finance first then Alpha Vantage.
 
     Args:
         include_history: Include historical data (MA, previous day, etc.)
-        provider: Specific provider to use (if None, uses pool with fallback)
+        provider: Specific provider to use (if None, tries Yahoo then Alpha Vantage)
         api_key: Alpha Vantage API key (optional)
 
     Returns:
@@ -361,5 +329,16 @@ def get_market_data(
     if provider is not None:
         return provider.get_market_data(include_history)
 
-    pool = DataProviderPool(api_key)
-    return pool.get_market_data(include_history)
+    # Try Yahoo Finance first
+    try:
+        return YahooFinanceProvider().get_market_data(include_history)
+    except MarketDataError:
+        pass
+
+    # Fall back to Alpha Vantage
+    try:
+        return AlphaVantageProvider(api_key).get_market_data(include_history)
+    except MarketDataError:
+        pass
+
+    raise MarketDataError("All data providers failed")

@@ -31,7 +31,7 @@ class TestGetMarketData:
         assert 'stoxx_open' in result
         assert result['stoxx_current'] == sample_stoxx50_data['Close'].iloc[-1]
         assert result['stoxx_open'] == sample_stoxx50_data['Open'].iloc[-1]
-        mock_ticker.assert_called_with("^STOXX50E")
+        mock_ticker.assert_any_call("^STOXX50E")
     
     @patch('data_provider.yf.Ticker')
     def test_fetch_vix_data_alongside_stoxx50(self, mock_ticker, sample_vix_data, sample_stoxx50_data):
@@ -67,7 +67,7 @@ class TestGetMarketData:
         mock_stoxx_ticker.history.return_value = pd.DataFrame()
         mock_ticker.return_value = mock_stoxx_ticker
         
-        with pytest.raises(MarketDataError, match="All providers failed"):
+        with pytest.raises(MarketDataError, match="All data providers failed"):
             get_market_data()
     
     @patch('data_provider.yf.Ticker')

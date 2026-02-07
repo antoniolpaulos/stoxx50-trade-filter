@@ -3,8 +3,8 @@
 
 # Rule thresholds
 rules:
-  vstoxx_max: 25                 # Rule 1: Max VSTOXX level (typically higher than VIX)
-  intraday_change_max: 1.0       # Rule 2: Max intraday change (%)
+  vix_warn: 22                   # VIX warning threshold (non-blocking, warning only)
+  intraday_change_max: 1.0       # Max intraday change (%) - blocking rule
 
 # Strike calculation
 strikes:
@@ -15,7 +15,7 @@ strikes:
 additional_filters:
   ma_deviation_max: 3.0          # Max % deviation from 20 DMA
   prev_day_range_max: 2.0        # Max previous day range (%)
-  check_vstoxx_term_structure: false  # VSTOXX term structure data limited on yfinance
+  check_vix_term_structure: false  # VIX term structure check
 
 # Economic calendar settings
 calendar:
@@ -77,10 +77,10 @@ costs:
 ibkr:
   enabled: false                   # Set to true to use real option prices
   host: "127.0.0.1"                # TWS/Gateway host
-  port: 7496                       # TWS: 7496=Live, 7497=Paper | Gateway: 4001=Live, 4002=Paper
+  port: 4001                       # Gateway: 4001=Live, 4002=Paper | TWS: 7496=Live, 7497=Paper
   client_id: 1                     # Unique client ID for this connection
   timeout: 10                      # Connection timeout in seconds
-  # For headless servers, use IBeAM (IB Gateway in Docker): https://github.com/Voyz/ibeam
+  # For headless setup, use IBC (IB Controller): https://github.com/IbcAlpha/IBC
 
 # Logging
 logging:

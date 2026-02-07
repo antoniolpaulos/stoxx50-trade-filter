@@ -16,7 +16,7 @@ import portfolio as pf
 from logger import TradeFilterLogger, get_logger
 from monitor import start_monitoring_daemon, set_monitor
 from config_validator import validate_config, check_config
-from data_provider import get_market_data as fetch_market_data, DataProviderPool
+from data_provider import get_market_data as fetch_market_data
 from telegram_api import send_notification, get_chat_id_from_updates, TelegramClient
 from calendar_provider import check_economic_calendar
 from ibkr_provider import get_real_credit, IBKR_AVAILABLE

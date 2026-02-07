@@ -10,6 +10,8 @@ from pathlib import Path
 PROJECT_ROOT = Path(__file__).parent.parent
 sys.path.insert(0, str(PROJECT_ROOT))
 
+collect_ignore_glob = ["archived/*"]
+
 # Import fixtures from sample_data
 from tests.fixtures.sample_data import (
     SAMPLE_VIX_DATA,

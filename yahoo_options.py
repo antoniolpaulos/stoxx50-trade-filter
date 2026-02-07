@@ -26,6 +26,8 @@ try:
 except ImportError:
     YFINANCE_AVAILABLE = False
 
+from trade_filter import calculate_strikes
+
 
 def norm_cdf(x: float) -> float:
     """Standard normal cumulative distribution function."""
@@ -210,8 +212,7 @@ class YahooOptionsProvider:
             return None
 
         # Calculate strikes
-        short_call = round(index_price * (1 + otm_percent / 100))
-        short_put = round(index_price * (1 - otm_percent / 100))
+        short_call, short_put = calculate_strikes(index_price, otm_percent)
         long_call = short_call + wing_width
         long_put = short_put - wing_width
 

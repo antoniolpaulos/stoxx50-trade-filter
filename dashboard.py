@@ -80,28 +80,6 @@ def api_history():
     })
 
 
-@app.route('/api/stats')
-def api_stats():
-    """Get monitoring statistics."""
-    monitor = get_monitor()
-
-    if monitor is None:
-        return jsonify({'error': 'Monitor not running'})
-
-    return jsonify(monitor.get_stats())
-
-
-@app.route('/api/force-check', methods=['POST'])
-def api_force_check():
-    """Force immediate check."""
-    monitor = get_monitor()
-
-    if monitor is None:
-        return jsonify({'error': 'Monitor not running'}), 503
-
-    state = monitor.force_check()
-    return jsonify(state.to_dict())
-
 
 @app.route('/api/portfolio')
 def api_portfolio():
@@ -318,157 +296,6 @@ def api_position_size():
         return jsonify({'success': False, 'error': str(e)}), 500
 
 
-@app.route('/api/risk-metrics')
-def api_risk_metrics():
-    """Calculate risk metrics for a trading strategy."""
-    try:
-        win_rate = request.args.get('win_rate', 0.65, type=float)
-        avg_win = request.args.get('avg_win', 250.0, type=float)
-        avg_loss = request.args.get('avg_loss', -350.0, type=float)
-
-        calculator = PositionSizingCalculator(10000)
-        metrics = calculator.calculate_risk_metrics(
-            win_rate=win_rate,
-            avg_win=avg_win,
-            avg_loss=avg_loss
-        )
-
-        return jsonify({
-            'success': True,
-            'metrics': {
-                'win_rate': metrics.win_rate,
-                'avg_win': metrics.avg_win,
-                'avg_loss': metrics.avg_loss,
-                'profit_factor': metrics.profit_factor,
-                'kelly_percent': metrics.kelly_percent,
-                'kelly_half': metrics.kelly_half,
-                'kelly_quarter': metrics.kelly_quarter,
-                'expected_value': metrics.expected_value
-            }
-        })
-    except Exception as e:
-        logger.error(f"Error calculating risk metrics: {e}")
-        return jsonify({'success': False, 'error': str(e)}), 500
-
-
-@app.route('/api/portfolio/pnl-chart')
-def api_pnl_chart():
-    """Get cumulative P&L data for charting."""
-    try:
-        portfolio_data = load_portfolio()
-        portfolios = portfolio_data.get('portfolios', {})
-
-        result = {}
-
-        for name in ['always_trade', 'filtered']:
-            if name not in portfolios:
-                continue
-
-            portfolio = portfolios[name]
-            history = portfolio.get('history', [])
-
-            if not history:
-                result[name] = {'dates': [], 'pnl': [], 'cumulative': []}
-                continue
-
-            # Sort by date
-            sorted_history = sorted(history, key=lambda x: x.get('date', ''))
-
-            dates = []
-            daily_pnl = []
-            cumulative = []
-            running_total = 0.0
-
-            for trade in sorted_history:
-                trade_date = trade.get('date', '')
-                pnl = trade.get('pnl', 0.0)
-
-                dates.append(trade_date)
-                daily_pnl.append(pnl)
-                running_total += pnl
-                cumulative.append(running_total)
-
-            result[name] = {
-                'dates': dates,
-                'daily_pnl': daily_pnl,
-                'cumulative': cumulative
-            }
-
-        return jsonify({
-            'success': True,
-            'data': result
-        })
-    except Exception as e:
-        logger.error(f"Error loading P&L chart data: {e}")
-        return jsonify({'success': False, 'error': str(e)}), 500
-
-
-@app.route('/api/status/brief')
-def api_status_brief():
-    """Get brief status for Telegram bot and other integrations."""
-    try:
-        from trade_filter import load_config, get_market_data, calculate_intraday_change
-
-        config = load_config()
-        monitor = get_monitor()
-
-        # Try to get from monitor first
-        if monitor and monitor.current_state:
-            state = monitor.current_state
-            return jsonify({
-                'trade_state': state.trade_state.value,
-                'stoxx_price': state.stoxx_price,
-                'stoxx_open': state.stoxx_open,
-                'intraday_change': state.intraday_change,
-                'vix': state.vix,
-                'reasons': state.reasons,
-                'timestamp': state.timestamp,
-                'source': 'monitor'
-            })
-
-        # Otherwise fetch fresh data
-        data = get_market_data(include_history=False)
-        intraday = calculate_intraday_change(data['stoxx_current'], data['stoxx_open'])
-
-        intraday_max = config.get('rules', {}).get('intraday_change_max', 1.0)
-        trade_state = 'GO' if abs(intraday) <= intraday_max else 'NO_GO'
-
-        reasons = []
-        if abs(intraday) > intraday_max:
-            direction = "up" if intraday > 0 else "down"
-            reasons.append(f"Trend too strong ({intraday:+.2f}% {direction})")
-
-        return jsonify({
-            'trade_state': trade_state,
-            'stoxx_price': data['stoxx_current'],
-            'stoxx_open': data['stoxx_open'],
-            'intraday_change': intraday,
-            'vix': data.get('vix'),
-            'reasons': reasons,
-            'timestamp': datetime.now().isoformat(),
-            'source': 'fresh'
-        })
-
-    except Exception as e:
-        logger.error(f"Error getting brief status: {e}")
-        return jsonify({'error': str(e)}), 500
-
-
-@app.route('/api/portfolio/summary')
-def api_portfolio_summary():
-    """Get compact portfolio summary for bot."""
-    try:
-        from portfolio import load_portfolio, get_portfolio_summary
-
-        data = load_portfolio()
-        summary = get_portfolio_summary(data)
-
-        return jsonify(summary)
-    except Exception as e:
-        logger.error(f"Error getting portfolio summary: {e}")
-        return jsonify({'error': str(e)}), 500
-
-
 @app.route('/telegram/webhook', methods=['POST'])
 def telegram_webhook():
     """Handle incoming Telegram webhook updates."""
@@ -490,21 +317,6 @@ def telegram_webhook():
         logger.exception(f"Webhook error: {e}")
         return jsonify({'error': str(e)}), 500
 
-
-@app.route('/api/telegram/status')
-def api_telegram_status():
-    """Get Telegram bot status."""
-    try:
-        from telegram_bot import get_bot
-
-        bot = get_bot()
-        return jsonify({
-            'configured': bot.is_configured() if bot else False,
-            'enabled': bot.enabled if bot else False,
-            'whitelist_count': len(bot.whitelist) if bot else 0
-        })
-    except Exception as e:
-        return jsonify({'configured': False, 'error': str(e)})
 
 
 def run_web_dashboard(host: str = '0.0.0.0', port: int = 5000, debug: bool = False,

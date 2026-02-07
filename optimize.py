@@ -18,7 +18,9 @@ import pandas as pd
 from termcolor import colored
 from tqdm import tqdm
 
-from trade_filter import calculate_strikes
+from trade_filter import calculate_strikes, calculate_intraday_change
+from portfolio import calculate_pnl
+from data_provider import get_historical_data
 
 
 @dataclass
@@ -43,24 +45,11 @@ class BacktestResult:
     is_train: bool = True
 
 
-def get_historical_data(start_date: str, end_date: str) -> Tuple[pd.DataFrame, pd.DataFrame]:
-    """Fetch historical VIX and Euro Stoxx 50 data."""
-    buffer_start = (datetime.strptime(start_date, '%Y-%m-%d') - timedelta(days=5)).strftime('%Y-%m-%d')
-    buffer_end = (datetime.strptime(end_date, '%Y-%m-%d') + timedelta(days=5)).strftime('%Y-%m-%d')
-
-    vix = yf.Ticker("^VIX")
-    stoxx = yf.Ticker("^STOXX50E")
-
-    vix_data = vix.history(start=buffer_start, end=buffer_end)
-    stoxx_data = stoxx.history(start=buffer_start, end=buffer_end)
-
-    return vix_data, stoxx_data
-
 
 def evaluate_day(vix_close: Optional[float], stoxx_open: float, stoxx_close: float,
                  intraday_change_max: float = 1.0) -> Tuple[bool, str, float, bool]:
     """Evaluate if we would trade on this day with configurable threshold."""
-    intraday_change = ((stoxx_close - stoxx_open) / stoxx_open) * 100
+    intraday_change = calculate_intraday_change(stoxx_close, stoxx_open)
     vix_warning = vix_close is not None and vix_close > 22
 
     if abs(intraday_change) > intraday_change_max:
@@ -71,19 +60,8 @@ def evaluate_day(vix_close: Optional[float], stoxx_open: float, stoxx_close: flo
 
 def simulate_iron_condor(stoxx_close: float, put_strike: float, call_strike: float,
                          wing_width: float, credit: float) -> float:
-    """Simulate Iron Condor P&L."""
-    multiplier = 10
-
-    if stoxx_close <= put_strike:
-        intrinsic = put_strike - stoxx_close
-        loss = min(intrinsic, wing_width) - credit
-        return -loss * multiplier
-    elif stoxx_close >= call_strike:
-        intrinsic = stoxx_close - call_strike
-        loss = min(intrinsic, wing_width) - credit
-        return -loss * multiplier
-    else:
-        return credit * multiplier
+    """Simulate Iron Condor P&L. Thin wrapper around portfolio.calculate_pnl."""
+    return calculate_pnl(stoxx_close, call_strike, put_strike, wing_width, credit)
 
 
 def run_single_backtest(params: ParameterSet, start_date: str, end_date: str,

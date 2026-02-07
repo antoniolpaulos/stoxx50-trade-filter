@@ -1,5 +1,5 @@
 rules:
-  vstoxx_max: 22
+  vix_warn: 22
   intraday_change_max: 1.0
 strikes:
   otm_percent: 1.0

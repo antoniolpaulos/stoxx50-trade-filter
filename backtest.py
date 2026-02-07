@@ -11,7 +11,10 @@ import yfinance as yf
 import pandas as pd
 from datetime import datetime, timedelta
 from termcolor import colored
-from trade_filter import calculate_strikes
+from trade_filter import calculate_strikes, calculate_intraday_change
+from portfolio import calculate_pnl
+from yahoo_options import black_scholes_call, black_scholes_put
+from data_provider import get_historical_data
 
 
 def load_config_defaults():
@@ -83,28 +86,7 @@ def estimate_credit_from_volatility(index_price, volatility, otm_percent=1.0, wi
     Returns:
         Estimated credit in EUR
     """
-    import math
-
-    def norm_cdf(x):
-        return 0.5 * (1 + math.erf(x / math.sqrt(2)))
-
-    def bs_call(S, K, T, r, sigma):
-        if T <= 0 or sigma <= 0:
-            return max(S - K, 0)
-        d1 = (math.log(S / K) + (r + 0.5 * sigma ** 2) * T) / (sigma * math.sqrt(T))
-        d2 = d1 - sigma * math.sqrt(T)
-        return S * norm_cdf(d1) - K * math.exp(-r * T) * norm_cdf(d2)
-
-    def bs_put(S, K, T, r, sigma):
-        if T <= 0 or sigma <= 0:
-            return max(K - S, 0)
-        d1 = (math.log(S / K) + (r + 0.5 * sigma ** 2) * T) / (sigma * math.sqrt(T))
-        d2 = d1 - sigma * math.sqrt(T)
-        return K * math.exp(-r * T) * norm_cdf(-d2) - S * norm_cdf(-d1)
-
-    # Calculate strikes
-    short_call = round(index_price * (1 + otm_percent / 100))
-    short_put = round(index_price * (1 - otm_percent / 100))
+    short_call, short_put = calculate_strikes(index_price, otm_percent)
     long_call = short_call + wing_width
     long_put = short_put - wing_width
 
@@ -113,32 +95,14 @@ def estimate_credit_from_volatility(index_price, volatility, otm_percent=1.0, wi
     r = 0.03
 
     # Calculate spreads
-    call_spread = bs_call(index_price, short_call, T, r, volatility) - bs_call(index_price, long_call, T, r, volatility)
-    put_spread = bs_put(index_price, short_put, T, r, volatility) - bs_put(index_price, long_put, T, r, volatility)
+    call_spread = black_scholes_call(index_price, short_call, T, r, volatility) - black_scholes_call(index_price, long_call, T, r, volatility)
+    put_spread = black_scholes_put(index_price, short_put, T, r, volatility) - black_scholes_put(index_price, long_put, T, r, volatility)
 
     credit_points = call_spread + put_spread
     credit_eur = credit_points * 10  # Multiplier
 
     return max(credit_eur, 0.50)  # Floor at €0.50
 
-
-def get_historical_data(start_date, end_date):
-    """Fetch historical VIX and Euro Stoxx 50 data.
-
-    Note: VSTOXX (V2TX.DE) is unavailable via yfinance, so we use VIX as a proxy.
-    VIX is used as a warning indicator only, not a blocking rule.
-    """
-    # Add buffer days to ensure we have data for the full range
-    buffer_start = (datetime.strptime(start_date, '%Y-%m-%d') - timedelta(days=5)).strftime('%Y-%m-%d')
-    buffer_end = (datetime.strptime(end_date, '%Y-%m-%d') + timedelta(days=5)).strftime('%Y-%m-%d')
-
-    vix = yf.Ticker("^VIX")
-    stoxx = yf.Ticker("^STOXX50E")
-
-    vix_data = vix.history(start=buffer_start, end=buffer_end)
-    stoxx_data = stoxx.history(start=buffer_start, end=buffer_end)
-
-    return vix_data, stoxx_data
 
 
 def evaluate_day(vix_close, stoxx_open, stoxx_close):
@@ -150,7 +114,7 @@ def evaluate_day(vix_close, stoxx_open, stoxx_close):
     Uses open-to-close change as proxy for trending days (since intraday data unavailable).
     """
     # Calculate open-to-close change as proxy for trending days
-    intraday_change = ((stoxx_close - stoxx_open) / stoxx_open) * 100
+    intraday_change = calculate_intraday_change(stoxx_close, stoxx_open)
 
     # VIX warning (non-blocking) - threshold 22
     vix_warning = vix_close > 22 if vix_close is not None else False
@@ -165,35 +129,8 @@ def evaluate_day(vix_close, stoxx_open, stoxx_close):
 
 
 def simulate_iron_condor(entry_price, stoxx_close, call_strike, put_strike, wing_width=50, credit=2.50):
-    """
-    Simulate Iron Condor P&L.
-
-    Args:
-        entry_price: STOXX price at entry
-        stoxx_close: STOXX closing price (0DTE expiration)
-        call_strike: Short call strike
-        put_strike: Short put strike
-        wing_width: Width of wings in points (default 50)
-        credit: Estimated credit received per spread (default €2.50)
-
-    Returns:
-        P&L in euros (per 1-lot, assuming €10 multiplier)
-    """
-    multiplier = 10  # Euro Stoxx 50 options multiplier
-
-    if stoxx_close <= put_strike:
-        # Put side breached
-        intrinsic = put_strike - stoxx_close
-        loss = min(intrinsic, wing_width) - credit
-        return -loss * multiplier
-    elif stoxx_close >= call_strike:
-        # Call side breached
-        intrinsic = stoxx_close - call_strike
-        loss = min(intrinsic, wing_width) - credit
-        return -loss * multiplier
-    else:
-        # Price within range - max profit
-        return credit * multiplier
+    """Simulate Iron Condor P&L. Thin wrapper around portfolio.calculate_pnl."""
+    return calculate_pnl(stoxx_close, call_strike, put_strike, wing_width, credit)
 
 
 def run_backtest(start_date, end_date, wing_width=50, credit=2.50, verbose=True, dynamic_credit=False, otm_percent=1.0):
